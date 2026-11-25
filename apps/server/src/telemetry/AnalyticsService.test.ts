@@ -158,7 +158,7 @@ const sendFor = (
     AnalyticsService.AnalyticsService | Effect.Services<typeof getTelemetryIdentity>
   > = recordTwentyEvents,
   policy?: ManagedPolicyDocument,
-  telemetryEnv?: { readonly T3CODE_TELEMETRY_ENABLED?: boolean },
+  telemetryEnv?: Parameters<typeof analyticsLayerWith>[2],
 ) =>
   Effect.gen(function* () {
     const batches: Array<ReadonlyArray<SentEvent>> = [];
@@ -207,6 +207,28 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("AnalyticsService
         }),
         undefined,
         {},
+      ).pipe(Effect.provideService(HostProcess.Environment, env));
+      assert.deepEqual(
+        batches.flat().map((event) => event.event),
+        ["test.allowed"],
+      );
+    }),
+  );
+
+  it.effect("sends nothing while DO_NOT_TRACK is set", () =>
+    Effect.gen(function* () {
+      const env: NodeJS.ProcessEnv = { DO_NOT_TRACK: "1" };
+      const batches = yield* sendFor(
+        0,
+        respondWithStatus(204),
+        Effect.gen(function* () {
+          const analytics = yield* AnalyticsService.AnalyticsService;
+          yield* analytics.record("test.do-not-track");
+          yield* analytics.flush;
+          env.DO_NOT_TRACK = "0";
+          yield* analytics.record("test.allowed");
+          yield* analytics.flush;
+        }),
       ).pipe(Effect.provideService(HostProcess.Environment, env));
       assert.deepEqual(
         batches.flat().map((event) => event.event),
@@ -303,6 +325,19 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("AnalyticsService
           limits: { telemetry: false },
         });
         assert.deepEqual(denied, []);
+      }),
+  );
+
+  it.effect.each([{}, { GITHUB_ACTIONS: "true" }] satisfies ReadonlyArray<NodeJS.ProcessEnv>)(
+    "sends only after an explicit opt-in with shell environment %o",
+    (env) =>
+      Effect.gen(function* () {
+        const send = (telemetryEnv: Parameters<typeof analyticsLayerWith>[2]) =>
+          sendFor(1, respondWithStatus(204), recordTwentyEvents, undefined, telemetryEnv).pipe(
+            Effect.provideService(HostProcess.Environment, env),
+          );
+        assert.deepEqual(yield* send({}), []);
+        assert.equal((yield* send({ T3CODE_TELEMETRY_ENABLED: true })).length, 1);
       }),
   );
 

@@ -387,6 +387,14 @@ describe("OtelEnvironment", () => {
 });
 
 describe("isRelayTracingEnabled", () => {
+  it("turns off for DO_NOT_TRACK, even after telemetry opt-in", () => {
+    const enabled = { T3CODE_TELEMETRY_ENABLED: "1" };
+    assert.isFalse(OtelEnvironment.isRelayTracingEnabled({ ...enabled, DO_NOT_TRACK: "1" }));
+    assert.isFalse(OtelEnvironment.isRelayTracingEnabled({ ...enabled, DO_NOT_TRACK: "true" }));
+    assert.isTrue(OtelEnvironment.isRelayTracingEnabled({ ...enabled, DO_NOT_TRACK: "0" }));
+    assert.isTrue(OtelEnvironment.isRelayTracingEnabled({ ...enabled, DO_NOT_TRACK: "" }));
+  });
+
   it("requires opt-in and respects the T3CODE SDK override of the standard kill switch", () => {
     const enabled = { T3CODE_TELEMETRY_ENABLED: "true" };
     assert.isFalse(OtelEnvironment.isRelayTracingEnabled({}));
@@ -407,6 +415,17 @@ describe("isRelayTracingEnabled", () => {
         OTEL_SDK_DISABLED: "false",
         T3CODE_OTEL_SDK_DISABLED: "true",
       }),
+    );
+  });
+
+  it("is off on a CI runner unless T3CODE_TELEMETRY_ENABLED turns it on", () => {
+    assert.isFalse(OtelEnvironment.isRelayTracingEnabled({ CI: "true" }));
+    assert.isFalse(OtelEnvironment.isRelayTracingEnabled({ JENKINS_URL: "https://ci.example" }));
+    assert.isTrue(
+      OtelEnvironment.isRelayTracingEnabled({ CI: "true", T3CODE_TELEMETRY_ENABLED: "true" }),
+    );
+    assert.isFalse(
+      OtelEnvironment.isRelayTracingEnabled({ CI: "true", T3CODE_TELEMETRY_ENABLED: "false" }),
     );
   });
 
