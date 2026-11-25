@@ -433,6 +433,8 @@ const config: ExpoConfig = {
       {
         android: {
           minSdkVersion: 24,
+          // ML Kit speech recognition uses Kotlin 2.4 metadata, which the default compiler cannot read.
+          kotlinVersion: "2.4.20",
           // SDK 58 lacks Kotlin 2.3's runtime-inert annotation. R8 needs explicit InputMerger constructors for widgets.
           extraProguardRules: [
             "-dontwarn kotlin.MustUseReturnValues",

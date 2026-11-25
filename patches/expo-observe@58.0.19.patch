@@ -1,8 +1,71 @@
 diff --git a/android/src/main/java/expo/modules/observe/ObservabilityManager.kt b/android/src/main/java/expo/modules/observe/ObservabilityManager.kt
-index c6c4f6e81a51173fbb07b304ef57cfb0d452a175..347c4cabf24cafcd9ba4f110e9d09ab3669bb5e3 100644
+index c6c4f6e81a51173fbb07b304ef57cfb0d452a175..3f30ff9decf786c9e6a70cd5fb3a148b94ac7bb5 100644
 --- a/android/src/main/java/expo/modules/observe/ObservabilityManager.kt
 +++ b/android/src/main/java/expo/modules/observe/ObservabilityManager.kt
-@@ -386,7 +386,7 @@ class BaseObservabilityManager(
+@@ -18,7 +18,7 @@ class ObservabilityManager(
+   constants: ConstantsInterface?,
+   val sessionManager: SessionManager
+ ) {
+-  private val baseManager: BaseObservabilityManager
++  private val baseManager: BaseObservabilityManager?
+ 
+   // TODO: Can this information change during expo module lifecycle?
+   init {
+@@ -27,38 +27,36 @@ class ObservabilityManager(
+       "Manifest is required to initialize ObservabilityManager."
+     }
+ 
+-    val projectId = manifest.projectId
+-    checkNotNull(projectId) {
+-      "Project ID is required to send observability metrics. Make sure you have configured it correctly in app.json."
++    // Local builds without an EAS project have no dispatch target.
++    baseManager = manifest.projectId?.let { projectId ->
++      BaseObservabilityManager(
++        context = context,
++        sessionManager = sessionManager,
++        projectId = projectId,
++        baseUrl = manifest.baseUrl ?: OBSERVE_DEFAULT_BASE_URL,
++        isDebugBuild = BuildConfig.DEBUG
++      )
+     }
+-    val baseUrl = manifest.baseUrl ?: OBSERVE_DEFAULT_BASE_URL
+-
+-    baseManager = BaseObservabilityManager(
+-      context = context,
+-      sessionManager = sessionManager,
+-      projectId = projectId,
+-      baseUrl = baseUrl,
+-      isDebugBuild = BuildConfig.DEBUG
+-    )
+   }
+ 
+   suspend fun dispatchUnsentMetrics() {
+-    baseManager.dispatchUnsentMetrics()
++    baseManager?.dispatchUnsentMetrics()
+   }
+ 
+   suspend fun dispatchUnsentLogs() {
+-    baseManager.dispatchUnsentLogs()
++    baseManager?.dispatchUnsentLogs()
+   }
+ 
+   suspend fun dispatchUnsentSpans() {
+-    baseManager.dispatchUnsentSpans()
++    baseManager?.dispatchUnsentSpans()
+   }
+ 
+   fun scheduleBackgroundDispatch() {
++    val manager = baseManager ?: return
+     ObservabilityBackgroundWorker.scheduleBackgroundDispatch(
+       context = context,
+-      projectId = baseManager.projectId,
+-      baseUrl = baseManager.baseUrl
++      projectId = manager.projectId,
++      baseUrl = manager.baseUrl
+     )
+   }
+ }
+@@ -386,7 +384,7 @@ class BaseObservabilityManager(
    }
  
    private fun shouldDispatch(config: PersistedConfig?, rate: Double?): Boolean {
