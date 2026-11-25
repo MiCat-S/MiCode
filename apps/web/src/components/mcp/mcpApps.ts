@@ -13,7 +13,7 @@ import { m, type MessageResolver } from "~/i18n/messages";
 
 /** How the Connect step hands MI Code's MCP URL to an app. Every `link` is https. */
 export type McpAppHandoff =
-  /** Opens the app's add form with MI Code filled in. */
+  /** Opens the app's add form with T3 Code filled in. */
   | { readonly kind: "open"; readonly link: (mcpUrl: string) => string }
   /** Copies the URL, then opens the page it goes on. */
   | { readonly kind: "copy-url"; readonly link: string }

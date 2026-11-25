@@ -27,6 +27,7 @@ import { layerRemoteHttpClient } from "@t3tools/client-runtime/rpc";
 import { __resetDesktopPrimaryAuthForTests } from "../environments/primary/desktopAuth";
 
 import { readCloudLinkState, unlinkEnvironmentFromCloud } from "./linkEnvironment";
+import { resolveCloudPublicConfig } from "./publicConfig";
 
 const TARGET = {
   environmentId: "environment-1",
@@ -186,6 +187,12 @@ function withServices<A, E>(
   return effect.pipe(Effect.provide(layerServices(options)));
 }
 
+// MI Code builds ignore the relay URL, so an unlink never reaches the relay.
+vi.stubEnv("VITE_T3CODE_RELAY_URL", "https://relay.example.test");
+const relayConfigurable = resolveCloudPublicConfig().relayUrl !== null;
+vi.unstubAllEnvs();
+const itWithRelay = it.effect.skipIf(!relayConfigurable);
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("VITE_T3CODE_RELAY_URL", "https://relay.example.test");
@@ -240,7 +247,7 @@ describe("web cloud link environment client", () => {
     }),
   );
 
-  it.effect("reports why the relay kept the environment after a local unlink", () =>
+  itWithRelay("reports why the relay kept the environment after a local unlink", () =>
     Effect.gen(function* () {
       const fetchMock = vi.fn((input: RequestInfo | URL) =>
         Promise.resolve(

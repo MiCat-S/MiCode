@@ -605,7 +605,10 @@ const iconCacheRuns = (run: ThemeIconRun) =>
   run.commands.filter(({ command }) => command === "gtk-update-icon-cache").length;
 
 it.layer(NodeServices.layer)("DesktopLinuxUrlHandler theme icons", (it) => {
-  it.effect("installs both app id spellings without creating an icon cache", () =>
+  // Both app id spellings are separate icon files only on a case-sensitive filesystem, as on Linux.
+  const itOnLinux = it.effect.skipIf(HostProcess.Platform.defaultValue() !== "linux");
+
+  itOnLinux("installs both app id spellings without creating an icon cache", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
@@ -634,7 +637,7 @@ it.layer(NodeServices.layer)("DesktopLinuxUrlHandler theme icons", (it) => {
     }),
   );
 
-  it.effect("replaces same-length stale icons and refreshes an existing cache once", () =>
+  itOnLinux("replaces same-length stale icons and refreshes an existing cache once", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;

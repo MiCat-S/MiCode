@@ -19,6 +19,7 @@ import type { RelayAgentActivityAggregateState } from "@t3tools/contracts/relay"
 import { verifyDpopProof } from "@t3tools/shared/dpop";
 import * as Dpop from "../cloud/dpop";
 import * as ManagedRelayLayer from "../cloud/managedRelayLayer";
+import { resolveCloudPublicConfig } from "../cloud/publicConfig";
 import {
   clearAgentAwarenessRegistrationRecord,
   loadAgentAwarenessDeviceId,
@@ -305,6 +306,11 @@ const runBackgroundOperations = Effect.fn("TestRemoteRegistration.runBackgroundO
   },
 );
 
+// MI Code builds ignore relay config, so the cases that register through the relay cannot run.
+const relayConfigurable =
+  resolveCloudPublicConfig({ relay: { url: "https://relay.example.test/" } }).relay.url !== null;
+const itWithRelay = it.effect.skipIf(!relayConfigurable);
+
 describe("makeRelayDeviceRegistrationRequest", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -375,7 +381,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
     }).pipe(Effect.provide(layerRelayTest));
   });
 
-  it.effect("registers a Live Activity push token that rotates after registration", () => {
+  itWithRelay("registers a Live Activity push token that rotates after registration", () => {
     const registeredTokens: Array<string> = [];
     vi.stubGlobal("fetch", async (request: RequestInfo | URL, init?: RequestInit) => {
       const url = request instanceof Request ? request.url : String(request);
@@ -422,7 +428,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
     );
   });
 
-  it.effect("registers a rotated Live Activity token only after an older registration", () => {
+  itWithRelay("registers a rotated Live Activity token only after an older registration", () => {
     const arrivals: Array<string> = [];
     let openOldRequest: (() => void) | undefined;
     const oldRequestGate = new Promise<void>((resolve) => {
@@ -504,7 +510,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
     );
   });
 
-  it.effect("still registers the active card when ended-card cleanup throws", () => {
+  itWithRelay("still registers the active card when ended-card cleanup throws", () => {
     const registrations: unknown[] = [];
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = new Request(input, init);
@@ -573,7 +579,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
     expect(appStateMock.listeners).toHaveLength(0);
   });
 
-  it.effect("registers the APNs device when cloud auth becomes available", () => {
+  itWithRelay("registers the APNs device when cloud auth becomes available", () => {
     const fetchMock = vi.fn((request: RequestInfo | URL) => {
       const url = request instanceof Request ? request.url : String(request);
       return Promise.resolve(
@@ -633,7 +639,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
     }).pipe(Effect.provide(layerRelayTest));
   });
 
-  it.effect("keeps a registered status when a later refresh fails", () => {
+  itWithRelay("keeps a registered status when a later refresh fails", () => {
     Constants.expoConfig!.extra = {
       relay: {
         url: "https://relay.example.test/",
@@ -669,7 +675,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
     }).pipe(Effect.provide(layerRelayTest));
   });
 
-  it.effect("does not re-register the same account when nothing has changed", () => {
+  itWithRelay("does not re-register the same account when nothing has changed", () => {
     Constants.expoConfig!.extra = {
       relay: {
         url: "https://relay.example.test/",
@@ -690,7 +696,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
     }).pipe(Effect.provide(layerRelayTest));
   });
 
-  it.effect("continues queued device registration after a failed auth lookup", () => {
+  itWithRelay("continues queued device registration after a failed auth lookup", () => {
     Constants.expoConfig!.extra = {
       relay: {
         url: "https://relay.example.test/",
@@ -781,6 +787,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
         ),
       );
     },
+    { skip: !relayConfigurable },
   );
 
   const stubAndroidDeviceRelay = () => {
@@ -809,7 +816,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
     return registrations;
   };
 
-  it.effect("does not report notifications ready when its push token lookup fails", () => {
+  itWithRelay("does not report notifications ready when its push token lookup fails", () => {
     const registrations = stubAndroidDeviceRelay();
     vi.mocked(Notifications.getDevicePushTokenAsync).mockRejectedValue(
       new Error("Default FirebaseApp is not initialized"),
@@ -839,7 +846,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
     );
   });
 
-  it.effect("keeps notifications enabled when a refresh cannot read the push token", () => {
+  itWithRelay("keeps notifications enabled when a refresh cannot read the push token", () => {
     const registrations = stubAndroidDeviceRelay();
     vi.mocked(Notifications.getDevicePushTokenAsync).mockResolvedValue({
       type: "android",
@@ -955,8 +962,9 @@ describe("makeRelayDeviceRegistrationRequest", () => {
         Effect.provide(layerRelayTest),
       );
     },
+    { skip: !relayConfigurable },
   );
-  it.effect("preserves relay rejection errors with React Native response headers", () => {
+  itWithRelay("preserves relay rejection errors with React Native response headers", () => {
     vi.spyOn(Platform, "OS", "get").mockReturnValue("android");
     vi.mocked(Notifications.getDevicePushTokenAsync).mockResolvedValue({
       type: "android",
@@ -1079,7 +1087,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
       ).pipe(Layer.merge(layerPersistenceTest));
     }
 
-    it.effect("registers an existing Live Activity before waiting on the widget read", () => {
+    itWithRelay("registers an existing Live Activity before waiting on the widget read", () => {
       const order: Array<string> = [];
       const activity = {
         getId: () => "activity-1",
@@ -1109,7 +1117,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
       }).pipe(Effect.provide(relay));
     });
 
-    it.effect("keeps the newest rows when an older overlapping read finishes last", () =>
+    itWithRelay("keeps the newest rows when an older overlapping read finishes last", () =>
       Effect.gen(function* () {
         const newer = { ...aggregate, activeCount: 2 };
         const olderRequested = yield* Deferred.make<void>();
@@ -1140,7 +1148,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
       }),
     );
 
-    it.effect("an obsolete refresh does not discard the next account's read", () =>
+    itWithRelay("an obsolete refresh does not discard the next account's read", () =>
       Effect.gen(function* () {
         let markTokenRequested = () => {};
         const tokenRequested = new Promise<void>((resolve) => {
@@ -1219,7 +1227,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
       }),
     );
 
-    it.effect("drops a snapshot that arrives after a sign-out, even on re-sign-in", () =>
+    itWithRelay("drops a snapshot that arrives after a sign-out, even on re-sign-in", () =>
       Effect.gen(function* () {
         const requested = yield* Deferred.make<void>();
         const response = yield* Deferred.make<{ readonly aggregate: typeof aggregate }>();
