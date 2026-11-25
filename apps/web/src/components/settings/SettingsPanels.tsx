@@ -71,6 +71,7 @@ import { useOptionalSettingsScope, useSettingsScope } from "./SettingsScopeConte
 import { scopedIdleCompaction } from "./scopedSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import { ThreadTitleInstructionsSettings } from "./ThreadTitleInstructionsSettings";
+import { PromptEnhancementSettingsSection } from "./PromptEnhancementSettings";
 import { SnoozePresetsRow } from "./SnoozePresetsSettings";
 import { IdleSessionTimeoutSettingsRow } from "./IdleSessionTimeoutSettingsRow";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
@@ -2440,6 +2441,8 @@ export function ThreadsSettingsPanel() {
           />
         </AdvancedSettings>
       </SettingsSection>
+
+      <PromptEnhancementSettingsSection />
     </SettingsPageContainer>
   );
 }

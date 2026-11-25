@@ -216,6 +216,19 @@ Stashes containing uploaded files must be restored in their original environment
 Those files are retained for 24 hours. After an upload expires, restore the prompt
 and use **Attach again** or remove the missing file before sending.
 
+## Enhance a prompt
+
+The sparkles button next to the model picker rewrites your draft into a clearer,
+better organized prompt and puts it in the composer for you to review. It keeps
+your language and meaning and does not add requirements. In an existing thread it
+also reads the recent conversation, so "continue with that" can become specific.
+Nothing is sent until you send it.
+
+While it works, press the button again or `Esc` to cancel. Afterwards the button
+turns into **Undo** until you edit the draft. On web and desktop the shortcut is
+`mod+alt+p`, and the command palette has **Enhance prompt**. Change the
+instructions or pick a faster model in **Settings → Threads → Prompt enhancement**.
+
 ## Voice input on web and desktop
 
 Use the composer's microphone or `mod+shift+d` to dictate into your draft. Audio

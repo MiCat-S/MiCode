@@ -151,6 +151,10 @@ import { useDictationShortcut } from "../../speech/useDictationShortcut";
 import { useDictationSubmissionShortcut } from "../../speech/useDictationSubmissionShortcut";
 import { useEnvironmentSpeechInput } from "../../speech/useEnvironmentSpeechInput";
 import { ComposerSpeechButton, ComposerSpeechRecordingPill } from "./ComposerSpeechButton";
+import { ComposerEnhancePromptButton } from "./ComposerEnhancePromptButton";
+import { usePromptEnhancement } from "./usePromptEnhancement";
+import { promptEnhancement } from "../../state/promptEnhancement";
+import { useAtomValue } from "@effect/atom-react";
 import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
 import { shortcutLabelForCommand, type ShortcutMatchContext } from "../../keybindings";
 import {
@@ -335,6 +339,8 @@ export interface ChatComposerHandle {
   toggleModelPicker: () => void;
   openControl: (command: KeybindingCommand) => void;
   isModelPickerOpen: () => boolean;
+  /** Starts, cancels, or undoes prompt enhancement, matching the composer button. */
+  toggleEnhancePrompt: () => void;
   isCaretAtStart: () => boolean;
   compactContext: () => void;
   readSnapshot: () => {
@@ -2048,6 +2054,34 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     modelPickerOpen: isComposerModelPickerOpen,
     ...(backgroundThread ? { targetRef: composerFormRef } : {}),
   });
+  const promptEnhancementThreadId = routeKind === "server" ? routeThreadRef.threadId : null;
+  // A thread lends its history to the model, so enhancing there also needs read access.
+  const canEnhancePrompt = useAtomValue(
+    promptEnhancement.enhance.permissionAtom(
+      environmentId,
+      promptEnhancementThreadId === null
+        ? { text: "" }
+        : { text: "", threadId: promptEnhancementThreadId },
+    ),
+  );
+  const promptEnhancer = usePromptEnhancement({
+    environmentId,
+    threadId: promptEnhancementThreadId,
+    draftKey: composerDraftTargetKey,
+    prompt,
+    disabled: !canEnhancePrompt || dictationDisabled || activePendingUserInput !== null,
+    readPrompt: () => promptRef.current,
+    // A question that arrived mid-request owns the editor; its answer must not take the rewrite.
+    replacePrompt: (expected, next) =>
+      activePendingUserInput === null &&
+      promptRef.current === expected &&
+      applyPromptReplacementStable(0, expected.length, next, { expectedText: expected }),
+  });
+  const enhancePromptShortcutLabel = shortcutLabelForCommand(
+    keybindings,
+    "composer.enhancePrompt",
+    { context: { terminalFocus: false, terminalOpen } },
+  );
 
   const resolveActiveComposerTrigger = (): {
     snapshot: { value: string; cursor: number; expandedCursor: number };
@@ -3411,6 +3445,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       },
       compactContext: compactThreadContextStable,
       isModelPickerOpen: () => isComposerModelPickerOpen,
+      toggleEnhancePrompt: promptEnhancer.toggle,
       isCaretAtStart: () => {
         const range = composerEditorRef.current?.readSelectionRange();
         return range !== undefined && range.start === 0 && range.end === 0;
@@ -3562,6 +3597,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       applyPromptReplacementStable,
       isComposerModelPickerOpen,
       openModelPickerStable,
+      promptEnhancer.toggle,
       readComposerSnapshotStable,
       resetComposerTrigger,
       setComposerTrigger,
@@ -4000,7 +4036,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       projectSelectionRequired ||
                       isChoiceOnlyPendingQuestion ||
                       activePendingIsResponding ||
-                      speechInput.freezesEditor
+                      speechInput.freezesEditor ||
+                      promptEnhancer.freezesEditor
                     }
                   />
                 </ComposerContextActionsContext>
@@ -4124,6 +4161,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     keepFullHistory={props.keepFullHistory}
                     onToggleKeepFullHistory={props.onToggleKeepFullHistory}
                   >
+                    {speechInput.state.phase === "idle" ? (
+                      <ComposerEnhancePromptButton
+                        state={promptEnhancer.state}
+                        canEnhance={promptEnhancer.canEnhance}
+                        shortcutLabel={enhancePromptShortcutLabel}
+                        onToggle={promptEnhancer.toggle}
+                      />
+                    ) : null}
                     {speechInput.available ? (
                       <>
                         <ComposerSpeechRecordingPill

@@ -1,4 +1,5 @@
 import type { Icon } from "@tabler/icons-react-native/types";
+import { IconTextEnhance } from "./IconTextEnhance";
 /* Package-root imports eagerly register the entire Tabler icon set in Metro. */
 import IconAdjustmentsHorizontal from "@tabler/icons-react-native/IconAdjustmentsHorizontal";
 import IconAlarm from "@tabler/icons-react-native/IconAlarm";
@@ -287,6 +288,7 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   "plus.bubble": IconMessagePlus,
   "ellipsis.bubble": IconMessageDots,
   robot: IconRobot,
+  "text.enhance": IconTextEnhance,
   "text.word.spacing": IconLetterSpacing,
   "textformat.size": IconTypography,
   "textformat.size.larger": IconTextIncrease,
@@ -307,7 +309,8 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
     | "git.commit"
     | "git.issue"
     | "file.diff"
-    | "robot",
+    | "robot"
+    | "text.enhance",
     Icon
   >
 >;
@@ -319,7 +322,8 @@ const SF_ICON_LOOKUP: Partial<
     | "git.commit"
     | "git.issue"
     | "file.diff"
-    | "robot",
+    | "robot"
+    | "text.enhance",
     Icon
   >
 > = ANDROID_ICON_BY_SF_SYMBOL;

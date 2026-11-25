@@ -283,6 +283,7 @@ import { suggestAppAccessForRemote } from "./sourceControlAppAccessToast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { ComposerHandleContext, useComposerHandleContext } from "../composerHandleContext";
 import type { ChatComposerHandle } from "./chat/ChatComposer";
+import { PromptEnhanceIcon } from "./chat/ComposerEnhancePromptButton";
 import {
   isPickableProjectMember,
   pickableProjectGroups,
@@ -423,6 +424,14 @@ function CommandPaletteDialog(props: {
           setOpen={props.setOpen}
           openChildSearch={props.openChildSearch}
           initialContext={props.initialContext}
+          enhanceComposerPrompt={() => {
+            const composer = composerHandleRef?.current;
+            if (!composer || composer.readSnapshot().value.trim().length === 0) {
+              toastManager.add({ type: "info", title: gt("Write a prompt to enhance first.") });
+              return;
+            }
+            composer.toggleEnhancePrompt();
+          }}
         />
       )}
     </CommandDialogPopup>
@@ -437,6 +446,7 @@ function OpenCommandPaletteDialog(props: {
     context: CommandPaletteReturnContext,
   ) => void;
   readonly initialContext: CommandPaletteReturnContext | undefined;
+  readonly enhanceComposerPrompt: () => void;
 }) {
   const gt = useGT();
   const messages = useMessages();
@@ -1437,6 +1447,18 @@ function OpenCommandPaletteDialog(props: {
       run: async () => {
         dispatchPreviewAction("find");
       },
+    });
+  }
+
+  if (paletteRouteTarget) {
+    actionItems.push({
+      kind: "action",
+      value: "enhance-prompt",
+      title: gt("Enhance prompt"),
+      searchTerms: ["enhance", "improve", "rewrite", "polish", "optimize", "prompt", "draft"],
+      icon: <PromptEnhanceIcon className={ITEM_ICON_CLASS} />,
+      shortcutCommand: "composer.enhancePrompt",
+      run: async () => props.enhanceComposerPrompt(),
     });
   }
 

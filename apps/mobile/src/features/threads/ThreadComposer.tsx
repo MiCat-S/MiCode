@@ -121,6 +121,9 @@ import {
   ComposerDictationToolbar,
 } from "../voice-input/ComposerDictationControl";
 import { useVoiceInputController } from "../voice-input/useVoiceInputController";
+import { promptEnhancement } from "../../state/promptEnhancement";
+import { ComposerEnhancePromptAction } from "./ComposerEnhancePromptAction";
+import { usePromptEnhancement } from "./usePromptEnhancement";
 import { resolveVoiceComposerPresentation } from "../voice-input/voiceInputPresentation";
 import type { ExistingThreadSettingsRouteParams } from "./ThreadSettingsSheet";
 import {
@@ -458,8 +461,38 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     onChangeDraftMessage: (text) => setComposerDraftText(composerDraftKey, text),
     onChangeSelection: composerMenu.onSelectionChange,
   });
+  const promptEnhancementThreadId = props.isDraft ? null : props.selectedThread.id;
+  // A thread lends its history to the model, so enhancing there also needs read access.
+  const canEnhancePrompt = useAtomValue(
+    promptEnhancement.enhance.permissionAtom(
+      props.environmentId,
+      promptEnhancementThreadId === null
+        ? { text: "" }
+        : { text: "", threadId: promptEnhancementThreadId },
+    ),
+  );
+  const promptEnhancer = usePromptEnhancement({
+    environmentId: props.environmentId,
+    threadId: promptEnhancementThreadId,
+    draftKey: composerDraftKey,
+    prompt: draftMessage,
+    disabled:
+      !canEnhancePrompt ||
+      !props.canOperateThread ||
+      props.interactionLocked === true ||
+      queuedEdit?.saving === true ||
+      voiceInput.blocksSubmission,
+    flushPendingInput: async () => {
+      await inputRef.current?.flushPendingInput();
+    },
+    readDraft: (draftKey) => getComposerDraftSnapshot(draftKey).text,
+    writeDraft: setComposerDraftText,
+  });
   const isSubmissionLocked =
-    props.interactionLocked === true || queuedEdit?.saving === true || voiceInput.blocksSubmission;
+    props.interactionLocked === true ||
+    queuedEdit?.saving === true ||
+    voiceInput.blocksSubmission ||
+    promptEnhancer.locksDraft;
   const voicePresentation = resolveVoiceComposerPresentation(
     voiceInput.state,
     voiceInput.elapsedSeconds,
@@ -1042,6 +1075,14 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
                   {compactControl}
                   {modelControl}
                 </Animated.View>
+                {draftMessage.trim().length > 0 || promptEnhancer.state !== "idle" ? (
+                  <ComposerEnhancePromptAction
+                    size={usesLargeControls ? "large" : "regular"}
+                    state={promptEnhancer.state}
+                    canEnhance={promptEnhancer.canEnhance}
+                    onToggle={promptEnhancer.toggle}
+                  />
+                ) : null}
                 <ComposerDictationStartAction
                   size={usesLargeControls ? "large" : "regular"}
                   state={voiceInput.state}

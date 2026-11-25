@@ -251,7 +251,8 @@ export function DictationElapsedTime(props: {
   );
 }
 
-function VoiceActionButton(props: {
+/** A plain composer action; also used by prompt enhancement beside the dictation button. */
+export function VoiceActionButton(props: {
   readonly size?: "regular" | "large";
   readonly accessibilityLabel: string;
   readonly disabled?: boolean;

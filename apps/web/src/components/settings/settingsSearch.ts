@@ -970,6 +970,22 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: [msg("generated thread titles source control content default provider")],
   },
   {
+    id: "prompt-enhancement-instructions",
+    title: msg("Prompt enhancement instructions"),
+    to: "/settings/threads",
+    scope: "environment-defaults",
+    searchTerms: [
+      msg("enhance improve rewrite polish optimize prompt draft composer instructions"),
+    ],
+  },
+  {
+    id: "prompt-enhancement-model",
+    title: msg("Enhancement model"),
+    to: "/settings/threads",
+    scope: "environment-defaults",
+    searchTerms: [msg("enhance improve rewrite polish prompt draft provider model")],
+  },
+  {
     id: "thread-title-instructions",
     title: msg("Thread title instructions"),
     to: "/settings/threads",
