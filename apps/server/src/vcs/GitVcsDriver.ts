@@ -1252,19 +1252,10 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
       const quotedObjects = quoteGitPatchPath(sharedObjects);
       // Isolate bulk-checkin packs so cleanup cannot remove another Git writer's objects.
       const privateObjects = yield* Effect.acquireRelease(
-        fileSystem
-          .makeTempDirectory({ directory: sharedObjects, prefix: "tmp_objdir-t3-checkpoint-" })
-          .pipe(
-            Effect.mapError(
-              (cause) =>
-                new VcsCheckpointStorageError({
-                  operation,
-                  cwd: input.cwd,
-                  stage: "isolate",
-                  cause,
-                }),
-            ),
-          ),
+        fileSystem.makeTempDirectory({
+          directory: sharedObjects,
+          prefix: "tmp_objdir-t3-checkpoint-",
+        }),
         (directory) =>
           fileSystem.remove(directory, { recursive: true, force: true }).pipe(
             Effect.catch((cause) =>
@@ -1273,6 +1264,13 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
               }),
             ),
           ),
+      ).pipe(
+        // Git's batch fsync moves packs out of its nested object directory into this one.
+        Effect.tap((directory) => fileSystem.makeDirectory(path.join(directory, "pack"))),
+        Effect.mapError(
+          (cause) =>
+            new VcsCheckpointStorageError({ operation, cwd: input.cwd, stage: "isolate", cause }),
+        ),
       );
       // git-lfs's clean filter copies each file into <lfs.storage>/tmp while hashing it and strands
       // that copy when killed. Give it storage that is removed with the capture's private objects.
