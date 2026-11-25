@@ -89,6 +89,12 @@ Linux, so export it there and restart the app. On Windows, set it as a user envi
 A browser opened from a T3 Code server sends relay traces only while connected and allowed by that
 server's policy. The hosted web app sends relay traces when configured and has no tracing toggle.
 
+## Desktop app updates
+
+Desktop builds from this repository leave the built-in updater off by default. Install a new build
+to update, or set `T3CODE_DISABLE_AUTO_UPDATE=false` in the app's launch environment to opt in when
+an update source is configured.
+
 ## Mobile app diagnostics
 
 Crash reports and connection traces are off by default in mobile builds from this repository.

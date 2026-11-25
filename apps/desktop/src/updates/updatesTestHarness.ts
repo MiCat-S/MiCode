@@ -47,6 +47,13 @@ export interface UpdatesHarnessOptions {
 }
 
 export function makeHarness(options: UpdatesHarnessOptions = {}) {
+  const config = DesktopConfig.layerTest({
+    T3CODE_HOME: `/tmp/t3-desktop-updates-test-${process.pid}`,
+    T3CODE_DISABLE_AUTO_UPDATE: "false",
+    T3CODE_DESKTOP_MOCK_UPDATES: "true",
+    T3CODE_DESKTOP_MOCK_UPDATE_SERVER_PORT: "4141",
+    ...options.env,
+  });
   let checkCount = 0;
   let quitAndInstallCount = 0;
   let downloadCount = 0;
@@ -189,19 +196,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
     isPackaged: true,
     resourcesPath: "/missing/resources",
     runningUnderArm64Translation: false,
-  }).pipe(
-    Layer.provide(
-      Layer.mergeAll(
-        NodeServices.layer,
-        DesktopConfig.layerTest({
-          T3CODE_HOME: `/tmp/t3-desktop-updates-test-${process.pid}`,
-          T3CODE_DESKTOP_MOCK_UPDATES: "true",
-          T3CODE_DESKTOP_MOCK_UPDATE_SERVER_PORT: "4141",
-          ...options.env,
-        }),
-      ),
-    ),
-  );
+  }).pipe(Layer.provide(Layer.mergeAll(NodeServices.layer, config)));
 
   let testSettings: DesktopAppSettings.DesktopSettings = {
     ...DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS,
@@ -301,14 +296,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
     Layer.provideMerge(layerSshEnvironment),
     Layer.provideMerge(DesktopState.layer),
     Layer.provideMerge(layerSettings),
-    Layer.provideMerge(
-      DesktopConfig.layerTest({
-        T3CODE_HOME: `/tmp/t3-desktop-updates-test-${process.pid}`,
-        T3CODE_DESKTOP_MOCK_UPDATES: "true",
-        T3CODE_DESKTOP_MOCK_UPDATE_SERVER_PORT: "4141",
-        ...options.env,
-      }),
-    ),
+    Layer.provideMerge(config),
     Layer.provideMerge(layerEnvironment),
     Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );

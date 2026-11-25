@@ -116,28 +116,33 @@ describe("DesktopUpdates", () => {
     }),
   );
 
-  it.effect("keeps the disabled reason available after configuration and channel changes", () => {
-    const harness = makeHarness({ env: { T3CODE_DISABLE_AUTO_UPDATE: "true" } });
-    const reason = "Automatic updates are disabled by the T3CODE_DISABLE_AUTO_UPDATE setting.";
+  it.effect.each([undefined, "true"])(
+    "leaves update checks disabled with a disable flag of %j",
+    (value) => {
+      const harness = makeHarness({ env: { T3CODE_DISABLE_AUTO_UPDATE: value } });
+      const reason = "Automatic updates are disabled by the T3CODE_DISABLE_AUTO_UPDATE setting.";
 
-    return Effect.scoped(
-      Effect.gen(function* () {
-        const updates = yield* DesktopUpdates.DesktopUpdates;
-        yield* updates.configure;
+      return Effect.scoped(
+        Effect.gen(function* () {
+          const updates = yield* DesktopUpdates.DesktopUpdates;
+          yield* updates.configure;
 
-        const configured = yield* updates.getState;
-        assert.equal(configured.message, reason);
+          const configured = yield* updates.getState;
+          assert.equal(configured.message, reason);
 
-        const changed = yield* updates.setChannel("nightly");
-        assert.equal(changed.channel, "nightly");
-        assert.equal(changed.enabled, false);
-        assert.equal(changed.status, "disabled");
-        assert.equal(changed.message, reason);
-        assert.equal(harness.sentStates.at(-1)?.message, reason);
-        assert.equal(harness.checkCount(), 0);
-      }),
-    ).pipe(Effect.provide(harness.layer));
-  });
+          const changed = yield* updates.setChannel("nightly");
+          assert.equal(changed.channel, "nightly");
+          assert.equal(changed.enabled, false);
+          assert.equal(changed.status, "disabled");
+          assert.equal(changed.message, reason);
+          assert.equal(harness.sentStates.at(-1)?.message, reason);
+          yield* TestClock.adjust("1 hour");
+          assert.isFalse((yield* updates.check("manual")).checked);
+          assert.equal(harness.checkCount(), 0);
+        }),
+      ).pipe(Effect.provide(harness.layer));
+    },
+  );
 
   it.effect("re-checks an offered update without announcing it again", () => {
     const harness = makeHarness();
