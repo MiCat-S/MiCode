@@ -71,6 +71,7 @@ import { scopedIdleCompaction } from "./scopedSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import { ThreadTitleInstructionsSettings } from "./ThreadTitleInstructionsSettings";
 import { SnoozePresetsRow } from "./SnoozePresetsSettings";
+import { IdleSessionTimeoutSettingsRow } from "./IdleSessionTimeoutSettingsRow";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
 import { managedTelemetryOffMessage, usePrimaryManagedPolicy } from "../../state/managedPolicy";
 import {
@@ -2470,6 +2471,7 @@ export function MaintenanceSettingsPanel() {
 
       <SettingsSection id="background" title={gt("Background activity")}>
         <BackgroundActivitySettingsRow />
+        <IdleSessionTimeoutSettingsRow />
         <SettingsRow
           serverScoped
           settingKeys={["keepAwakeWhileAgentsWork"]}

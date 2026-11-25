@@ -1390,6 +1390,12 @@ export const CloudSpeechCredentials = Schema.Struct({
   openrouter: CloudSpeechCredential,
 });
 
+// Keep the duration within the host timer's signed 32-bit millisecond limit.
+export const MAX_PROVIDER_SESSION_IDLE_TIMEOUT_MINUTES = Math.floor(2_147_483_647 / 60_000);
+const ProviderSessionIdleTimeoutMinutes = Schema.Int.check(
+  Schema.isBetween({ minimum: 1, maximum: MAX_PROVIDER_SESSION_IDLE_TIMEOUT_MINUTES }),
+);
+
 export const ServerSettings = Schema.Struct({
   // Null means unmigrated; empty is authoritative and must not resurrect cleared preferences.
   favorites: Schema.NullOr(ModelFavorites).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
@@ -1420,6 +1426,10 @@ export const ServerSettings = Schema.Struct({
   ),
   /** Holds an OS sleep inhibitor while any run is active; closing a laptop lid still sleeps it. */
   keepAwakeWhileAgentsWork: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  /** How long native-resumable provider sessions stay alive after a turn. */
+  providerSessionIdleTimeoutMinutes: ProviderSessionIdleTimeoutMinutes.pipe(
+    Schema.withDecodingDefault(Effect.succeed(30)),
+  ),
   /** New T3 Connect device keys wait for approval from someone already trusted here. */
   requireConnectDeviceApproval: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
@@ -1895,6 +1905,7 @@ export const ServerSettingsPatch = Schema.Struct({
   enableProviderUpdateChecks: Schema.optionalKey(Schema.Boolean),
   continueThreadsAfterServerUpdate: Schema.optionalKey(Schema.Boolean),
   keepAwakeWhileAgentsWork: Schema.optionalKey(Schema.Boolean),
+  providerSessionIdleTimeoutMinutes: Schema.optionalKey(ProviderSessionIdleTimeoutMinutes),
   requireConnectDeviceApproval: Schema.optionalKey(Schema.Boolean),
   enableAgentBrowserAccess: Schema.optionalKey(Schema.Boolean),
   enablePreviewTunnel: Schema.optionalKey(Schema.Boolean),

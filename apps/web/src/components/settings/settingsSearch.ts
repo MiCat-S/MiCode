@@ -872,6 +872,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
+    id: "agent-session-idle-timeout",
+    title: msg("Idle session timeout"),
+    to: "/settings/maintenance",
+    scope: "environment-defaults",
+    searchTerms: [msg("idle minutes agent provider close process resume session")],
+  },
+  {
     id: "keep-awake-while-agents-work",
     title: msg("Keep awake while agents work"),
     to: "/settings/maintenance",

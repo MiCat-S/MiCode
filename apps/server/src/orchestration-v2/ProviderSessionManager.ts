@@ -3,6 +3,7 @@ import * as KeyedLock from "@t3tools/shared/KeyedLock";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import {
   CommandId,
+  DEFAULT_SERVER_SETTINGS,
   isOrchestrationV2WorkActive,
   ModelSelection,
   type OrchestrationV2AppThread,
@@ -78,7 +79,6 @@ import {
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 
-const DEFAULT_IDLE_TIMEOUT_MS = 2 * 60 * 1000;
 // Without native resume, a released session comes back as a summary of the thread, so it stays longer.
 const NO_NATIVE_RESUME_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 const DEFAULT_MAX_IDLE_PIN_MS = 4 * 60 * 60 * 1000;
@@ -578,13 +578,24 @@ export const layerWithOptions = (
         readonly providerSessionId: ProviderSessionId;
         readonly threadId: ThreadId;
       }) => `${input.providerSessionId}\u0000${input.threadId}`;
-      const idleTimeoutFor = (runtime: ProviderAdapter.ProviderAdapterV2SessionRuntime) =>
-        Math.max(
-          1,
-          options.idleTimeoutMs ??
-            (runtime.providerSession.capabilities.turns.supportsNativeResume === true
-              ? DEFAULT_IDLE_TIMEOUT_MS
-              : NO_NATIVE_RESUME_IDLE_TIMEOUT_MS),
+      const defaultIdleMinutes = DEFAULT_SERVER_SETTINGS.providerSessionIdleTimeoutMinutes;
+      const idleMinutes = Option.isSome(serverSettings)
+        ? serverSettings.value.getSettings.pipe(
+            Effect.map((settings) => settings.providerSessionIdleTimeoutMinutes),
+            Effect.orElseSucceed(() => defaultIdleMinutes),
+          )
+        : Effect.succeed(defaultIdleMinutes);
+      const idleTimeoutFor = (runtime: ProviderAdapter.ProviderAdapterV2SessionRuntime) => {
+        if (options.idleTimeoutMs !== undefined) {
+          return Effect.succeed(Math.max(1, options.idleTimeoutMs));
+        }
+        return runtime.providerSession.capabilities.turns.supportsNativeResume === true
+          ? idleMinutes.pipe(Effect.map((minutes) => minutes * 60_000))
+          : Effect.succeed(NO_NATIVE_RESUME_IDLE_TIMEOUT_MS);
+      };
+      const waitForIdleTimeout = (runtime: ProviderAdapter.ProviderAdapterV2SessionRuntime) =>
+        idleTimeoutFor(runtime).pipe(
+          Effect.flatMap((timeout) => Effect.sleep(Duration.millis(timeout))),
         );
       const maxIdlePinMs = Math.max(0, options.maxIdlePinMs ?? DEFAULT_MAX_IDLE_PIN_MS);
       interface PreparedMcpCredential {
@@ -1697,7 +1708,7 @@ export const layerWithOptions = (
                 pinnedForMs: now - pinnedSinceMs,
               });
               // Recheck on this fiber; scheduleIdleReleaseInternal would interrupt it and self-deadlock.
-              yield* Effect.sleep(Duration.millis(idleTimeoutFor(probedRuntime)));
+              yield* waitForIdleTimeout(probedRuntime);
               return yield* releaseIfStillIdle(input);
             }
             yield* Effect.logWarning("orchestration-v2.driver-session.idle-release-pin-expired", {
@@ -1767,7 +1778,7 @@ export const layerWithOptions = (
 
         yield* cancelIdleFiber(entry.idleFiber);
         const generation = entry.idleGeneration + 1;
-        const idleFiber = yield* Effect.sleep(Duration.millis(idleTimeoutFor(entry.runtime))).pipe(
+        const idleFiber = yield* waitForIdleTimeout(entry.runtime).pipe(
           Effect.andThen(releaseIfStillIdle({ providerSessionId, generation })),
           Effect.forkIn(layerScope),
         );
@@ -2137,7 +2148,7 @@ export const layerWithOptions = (
           const pending = entry.idleThreadUnloads.get(providerThreadId);
           if (pending === undefined) return;
           const generation = pending.generation + 1;
-          const fiber = yield* Effect.sleep(Duration.millis(idleTimeoutFor(entry.runtime))).pipe(
+          const fiber = yield* waitForIdleTimeout(entry.runtime).pipe(
             Effect.andThen(
               unloadIdleThread({
                 providerSessionId,
@@ -2226,11 +2237,11 @@ export const layerWithOptions = (
                   : yield* entry.runtime
                       .hasPendingBackgroundWorkForThread(pending.providerThread)
                       .pipe(Effect.catchCause(() => Effect.succeed(false)));
-              if (hasPendingWork) return { retryAfterMs: idleTimeoutFor(entry.runtime) };
+              if (hasPendingWork) return { retryAfterMs: yield* idleTimeoutFor(entry.runtime) };
               const child = yield* delegatedChildArchive(input.threadId);
               // Unloading now would miss the archive once the parent takes the result.
               if (child === "awaiting_delivery") {
-                return { retryAfterMs: idleTimeoutFor(entry.runtime) };
+                return { retryAfterMs: yield* idleTimeoutFor(entry.runtime) };
               }
               const archive = child === "ready";
               if (input.archiveOnly === true && !archive) return "skipped" as const;

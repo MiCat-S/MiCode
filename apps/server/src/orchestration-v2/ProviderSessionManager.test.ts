@@ -2105,11 +2105,22 @@ it.effect(
 );
 
 it.effect.each([
-  { resume: "native resume", supportsNativeResume: true, minutes: 2 },
-  { resume: "no native resume", supportsNativeResume: false, minutes: 30 },
+  {
+    resume: "native resume by default",
+    supportsNativeResume: true,
+    minutes: 30,
+    configured: undefined,
+  },
+  {
+    resume: "native resume when configured",
+    supportsNativeResume: true,
+    minutes: 45,
+    configured: 45,
+  },
+  { resume: "no native resume", supportsNativeResume: false, minutes: 30, configured: 45 },
 ])(
   "ProviderSessionManagerV2 releases an idle session with $resume after $minutes minutes",
-  ({ supportsNativeResume, minutes }) =>
+  ({ supportsNativeResume, minutes, configured }) =>
     Effect.gen(function* () {
       const state = yield* Ref.make(emptyState);
       const capabilities = {
@@ -2135,7 +2146,21 @@ it.effect.each([
         assert.isTrue(yield* manager.isLive(providerSessionId));
         yield* TestClock.adjust("1 second");
         assert.isFalse(yield* manager.isLive(providerSessionId));
-      }).pipe(Effect.provide(layerTest({ state, capabilities })));
+      }).pipe(
+        Effect.provide(
+          layerTest({
+            state,
+            capabilities,
+            ...(configured === undefined
+              ? {}
+              : {
+                  serverSettingsLayer: ServerSettings.layerTest({
+                    providerSessionIdleTimeoutMinutes: configured,
+                  }),
+                }),
+          }),
+        ),
+      );
     }),
 );
 
