@@ -11,16 +11,16 @@ vi.mock("expo-constants", () => ({
 }));
 
 describe("resolveCloudPublicConfig", () => {
-  it("rejects an insecure relay URL", () => {
+  it("ignores a saved login and relay configuration", () => {
     expect(
       resolveCloudPublicConfig({
         clerk: { publishableKey: "pk_test_example", jwtTemplate: "t3-relay" },
-        relay: { url: "http://relay.example.test" },
+        relay: { url: "https://relay.example.test" },
       }),
     ).toEqual({
       clerk: {
-        publishableKey: "pk_test_example",
-        jwtTemplate: "t3-relay",
+        publishableKey: null,
+        jwtTemplate: null,
       },
       relay: {
         url: null,

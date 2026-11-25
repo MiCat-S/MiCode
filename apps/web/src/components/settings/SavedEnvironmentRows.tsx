@@ -903,9 +903,7 @@ function EmptyRemoteEnvironments({ cloudEnabled = true }: { readonly cloudEnable
         </EmptyTitle>
         <EmptyDescription>
           {cloudEnabled
-            ? gt(
-                "Click “Add environment” to pair another environment, or connect one from T3 Connect.",
-              )
+            ? gt("Click “Add environment” to pair another environment.")
             : gt("Click “Add environment” to pair another environment.")}
         </EmptyDescription>
       </EmptyHeader>

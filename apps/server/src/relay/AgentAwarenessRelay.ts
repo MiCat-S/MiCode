@@ -1004,4 +1004,10 @@ export const make = Effect.gen(function* () {
   });
 });
 
-export const layer = Layer.effect(AgentAwarenessRelay, make);
+// Direct clients still receive thread events from the normal server connection.
+export const layerLocalOnly = Layer.succeed(AgentAwarenessRelay, {
+  publishThread: Effect.fn("AgentAwarenessRelay.localOnly.publishThread")(() => Effect.void),
+  drain: Effect.void,
+  requestCatchUp: Effect.fn("AgentAwarenessRelay.localOnly.requestCatchUp")(() => Effect.void),
+  start: Effect.fn("AgentAwarenessRelay.localOnly.start")(() => Effect.void),
+});

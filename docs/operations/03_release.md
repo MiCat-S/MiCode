@@ -26,7 +26,7 @@ Nightly installs check `releases.atom` (the 10 newest git tags), then the `updat
 
 ## T3 Connect relay deployment
 
-`.github/workflows/deploy-relay.yml` deploys Alchemy stage `prod` on every push to `main`. See [infra/relay/README.md](../../infra/relay/README.md#deployment-ci) for required variables/secrets. Keep `.env.example` in sync with `production` public identifiers so preview builds work off non-`main` branches. After editing a secret/variable, manually run **Deploy T3 Connect relay** (with `force` unchecked).
+MI Code builds use direct client pairing and require no cloud login or relay deployment.
 
 Labeling a same-repo PR `relay:preview` deploys stage `pr-<number>` (cleaned up on unlabel/close).
 

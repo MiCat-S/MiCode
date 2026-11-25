@@ -1738,3 +1738,54 @@ const make = Effect.gen(function* () {
 });
 
 export const layer = Layer.effect(CloudLink, make);
+
+// Legacy clients can still read the link status. No persisted relay is loaded or changed.
+export const layerLocalOnly = Layer.succeed(
+  CloudLink,
+  (() => {
+    const refuse = () =>
+      Effect.fail(
+        new ManagedLimits.ManagedPolicyRefusedError({
+          organization: "MI Code",
+          action: "T3 Connect",
+        }),
+      );
+    return CloudLink.of({
+      linkProof: refuse,
+      applyRelayConfig: refuse,
+      linkState: Effect.fn("CloudLink.localOnly.linkState")(() =>
+        Effect.succeed({
+          linked: false,
+          cloudUserId: null,
+          relayUrl: null,
+          relayIssuer: null,
+          managedTunnelActive: false,
+          publishAgentActivity: false,
+          linkableHere: false,
+        }),
+      ),
+      unlink: Effect.fn("CloudLink.localOnly.unlink")(() =>
+        internalError("remove-relay-config")("Relay linking was removed."),
+      ),
+      updatePreferences: refuse,
+      updateLiveActivityPreference: refuse,
+      answerHealthRequest: refuse,
+      mintCredential: refuse,
+      reconcileDesiredLinkIfStillDesired: Effect.fn(
+        "CloudLink.localOnly.reconcileDesiredLinkIfStillDesired",
+      )(() => Effect.succeed(null)),
+      registerManagedTunnelRecovery: Effect.fn("CloudLink.localOnly.registerManagedTunnelRecovery")(
+        () => Effect.succeed({ status: "not_linked" }),
+      ),
+      recoverManagedTunnel: Effect.fn("CloudLink.localOnly.recoverManagedTunnel")(() =>
+        Effect.succeed(false),
+      ),
+      startManagedTunnelIfOriginConfirmed: Effect.fn(
+        "CloudLink.localOnly.startManagedTunnelIfOriginConfirmed",
+      )(() => Effect.succeed(false)),
+      releaseManagedTunnelOnShutdown: Effect.fn(
+        "CloudLink.localOnly.releaseManagedTunnelOnShutdown",
+      )(() => Effect.succeed(false)),
+    });
+  })(),
+);

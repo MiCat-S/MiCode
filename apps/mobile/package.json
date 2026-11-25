@@ -175,6 +175,9 @@
       ]
     },
     "autolinking": {
+      "exclude": [
+        "@clerk/expo-native-components"
+      ],
       "buildFromSource": [
         "@expo/ui",
         "expo-ui",
@@ -189,6 +192,7 @@
       ],
       "ios": {
         "exclude": [
+          "@clerk/expo-native-components",
           "react-native-pdf-jsi"
         ]
       }

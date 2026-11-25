@@ -232,7 +232,7 @@ const make = Effect.gen(function* () {
   const commandOutputs = yield* CommandOutputHub.CommandOutputHub;
   const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
-  const managedEndpoint = yield* CloudManagedEndpointRuntime;
+  const managedEndpoint = yield* Effect.serviceOption(CloudManagedEndpointRuntime);
   const { attachmentsDir } = yield* ServerConfig.ServerConfig;
   const fileSystem = yield* FileSystem.FileSystem;
   const random = yield* SecureRandom.SecureRandom;
@@ -290,14 +290,15 @@ const make = Effect.gen(function* () {
     return decodeSessionClaims(base64UrlDecodeUtf8(parts.payload));
   });
 
-  const connectHostname = managedEndpoint.inspectConnector.pipe(
-    Effect.map((facts) => facts?.hostname ?? null),
-  );
-  // A beta: while it is off, no link opens and every guest request is refused.
-  const sharingEnabled = serverSettings.getSettings.pipe(
-    Effect.map((settings) => settings.guestSharingEnabled),
-    Effect.orElseSucceed(() => false),
-  );
+  const connectHostname = Option.isSome(managedEndpoint)
+    ? managedEndpoint.value.inspectConnector.pipe(Effect.map((facts) => facts?.hostname ?? null))
+    : Effect.succeed(null);
+  const sharingEnabled = Option.isNone(managedEndpoint)
+    ? Effect.succeed(false)
+    : serverSettings.getSettings.pipe(
+        Effect.map((settings) => settings.guestSharingEnabled),
+        Effect.orElseSucceed(() => false),
+      );
 
   const dispatchGuestCommand = (
     command: Parameters<Orchestrator.OrchestratorV2["Service"]["dispatch"]>[0],

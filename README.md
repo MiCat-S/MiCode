@@ -24,4 +24,4 @@ Report MI Code issues on [this repository](https://github.com/MiCat-S/t3code/iss
 
 ## License
 
-The source code is available under the [MIT License](./LICENSE), with the original copyright notice preserved. The [upstream trademark policy](./TRADEMARK.md) describes the T3 Code marks. Optional services such as T3 Connect belong to their respective providers.
+The source code is available under the [MIT License](./LICENSE), with the original copyright notice preserved. The [upstream trademark policy](./TRADEMARK.md) describes the T3 Code marks.

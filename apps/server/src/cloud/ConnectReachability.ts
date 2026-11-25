@@ -199,17 +199,6 @@ export function classifyReachability(
   );
 }
 
-/** The loud diagnosis the CLI prints and the server logs. */
-export function formatReachabilityFailure(result: Unreachable): string {
-  return [
-    "✕ T3 Connect is NOT reachable from other devices",
-    `  ${result.reason}`,
-    ...(result.hint ? [`  ${result.hint}`] : []),
-    `  Fix: ${result.fix}`,
-    `  More info: ${connectReachabilityHelpUrl(result.cause)}`,
-  ].join("\n");
-}
-
 /** The code of a failed name lookup, or null. getaddrinfo reports more than the DNS codes, such as EBUSY. */
 function dnsLookupErrorCode(error: unknown): string | null {
   let current = error;
@@ -242,6 +231,17 @@ const canOpenTcp = (host: string, port: number) =>
     socket.once("error", () => finish(false));
     return Effect.sync(() => socket.destroy());
   });
+
+/** The loud diagnosis the CLI prints and the server logs. */
+function formatReachabilityFailure(result: Unreachable): string {
+  return [
+    "✕ T3 Connect is NOT reachable from other devices",
+    `  ${result.reason}`,
+    ...(result.hint ? [`  ${result.hint}`] : []),
+    `  Fix: ${result.fix}`,
+    `  More info: ${connectReachabilityHelpUrl(result.cause)}`,
+  ].join("\n");
+}
 
 export class ConnectReachability extends Context.Service<
   ConnectReachability,
@@ -499,3 +499,17 @@ const make = Effect.gen(function* () {
 });
 
 export const layer = Layer.effect(ConnectReachability, make);
+
+export const layerLocalOnly = Layer.succeed(ConnectReachability, {
+  check: DateTime.now.pipe(
+    Effect.map((now): EnvironmentConnectReachability => ({
+      status: "unreachable",
+      checkedAt: DateTime.formatIso(now),
+      cause: "not_linked",
+      reason: "Relay connections were removed from MI Code.",
+      hint: null,
+      fix: "Pair with a direct address on the local network or VPN.",
+    })),
+  ),
+  latest: Effect.succeedNone,
+});

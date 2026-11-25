@@ -44,13 +44,6 @@ export const relayLayer = (
     }),
   );
 
-export const layerHeadlessRelayClient = relayLayer({
-  serviceName: "t3code-server",
-  runtime: "node",
-  attributes: nodeProcessRuntimeAttributes(),
-  client: "headless-cli",
-});
-
 export const layerServerRelayBroker = relayLayer({
   serviceName: "t3code-server",
   runtime: "node",
