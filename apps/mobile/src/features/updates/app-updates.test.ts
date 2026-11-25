@@ -304,6 +304,16 @@ describe("runAppUpdateCheck", () => {
 });
 
 describe("installAppUpdateChecks", () => {
+  it("skips launch and foreground checks when Expo updates are disabled", () => {
+    vi.mocked(AppState.addEventListener).mockClear();
+    const client = makeUpdateClient({ isEnabled: false });
+
+    installAppUpdateChecks(client)();
+
+    expect(client.checkForUpdateAsync).not.toHaveBeenCalled();
+    expect(AppState.addEventListener).not.toHaveBeenCalled();
+  });
+
   it("checks once at launch and stops listening for foregrounds when disposed", () => {
     const remove = vi.fn();
     vi.mocked(AppState.addEventListener).mockReturnValueOnce({ remove });

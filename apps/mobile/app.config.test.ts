@@ -6,7 +6,10 @@ import assetLinks from "../web/public/.well-known/assetlinks.json";
 
 // Keep config parsing independent of local env files and build credentials.
 vi.mock("../../scripts/lib/public-config.ts", () => ({
-  loadRepoEnv: () => ({ APP_VARIANT: process.env.APP_VARIANT }),
+  loadRepoEnv: () => ({
+    APP_VARIANT: process.env.APP_VARIANT,
+    T3CODE_MOBILE_UPDATES_ENABLED: process.env.T3CODE_MOBILE_UPDATES_ENABLED,
+  }),
 }));
 
 afterEach(() => {
@@ -23,6 +26,16 @@ it.each(["prod", ""])("rejects APP_VARIANT=%j before selecting production IDs", 
   await expect(loadConfig(value)).rejects.toThrow(
     "APP_VARIANT must be development, preview, or production.",
   );
+});
+
+it.each([
+  [undefined, false],
+  ["0", false],
+  ["1", true],
+])("only enables mobile updates with an explicit opt-in (%j)", async (value, enabled) => {
+  vi.stubEnv("T3CODE_MOBILE_UPDATES_ENABLED", value);
+  const config = await loadConfig("production");
+  expect(config.updates?.enabled).toBe(enabled);
 });
 
 it.each([

@@ -94,6 +94,9 @@ server's policy. The hosted web app sends relay traces when configured and has n
 Crash reports and connection traces are off by default in mobile builds from this repository.
 The app honors previously saved choices for the two switches separately.
 
+These builds also turn Expo over-the-air updates off by default. Build and install a new app to
+update it, or opt in to Expo updates at build time with `T3CODE_MOBILE_UPDATES_ENABLED=1`.
+
 When crash reports are enabled and the iOS or Android app crashes or hits an error, it sends a report to T3 Code: the error
 message, the stack trace, the app version, and the device model and OS version. Each launch also
 sends startup timings, and every report carries a random ID for the install. Reports go through
