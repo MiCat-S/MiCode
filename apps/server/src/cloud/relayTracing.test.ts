@@ -66,12 +66,15 @@ it.effect("relay tracing waits for the desktop shell's telemetry opt-out", () =>
 });
 
 it("reports the server's relay tracing policy to clients", () => {
-  assert.isTrue(allowedFor({}, undefined));
+  const enabled = { T3CODE_TELEMETRY_ENABLED: "true" };
+  assert.isFalse(allowedFor({}, undefined));
+  assert.isTrue(allowedFor(enabled, undefined));
   assert.isFalse(allowedFor({ T3CODE_TELEMETRY_ENABLED: "false" }, undefined));
   assert.isFalse(
-    allowedFor(
-      {},
-      { organization: "Example Corp", lockedSettings: [], limits: { telemetry: false } },
-    ),
+    allowedFor(enabled, {
+      organization: "Example Corp",
+      lockedSettings: [],
+      limits: { telemetry: false },
+    }),
   );
 });

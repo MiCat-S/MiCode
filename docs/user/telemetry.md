@@ -1,5 +1,9 @@
 # Product usage data
 
+This repository's builds leave product usage reporting and server and desktop relay tracing off by
+default. To enable them, set `T3CODE_TELEMETRY_ENABLED=true` before starting the server or desktop
+app. Mobile and hosted web diagnostics are described separately below.
+
 The T3 Code server sends product usage events to T3 Code's own endpoint at `ingest.t3.codes`,
 associated with a hashed random identifier for the installation. To count how many installations one person
 uses, the server also sends a hashed identifier for your T3 Connect account when you are signed in

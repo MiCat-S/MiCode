@@ -114,7 +114,13 @@ const recordTwentyEvents = Effect.gen(function* () {
   }
 });
 
-const analyticsLayerWith = (client: HttpClient.HttpClient, policy?: ManagedPolicyDocument) =>
+const analyticsLayerWith = (
+  client: HttpClient.HttpClient,
+  policy?: ManagedPolicyDocument,
+  telemetryEnv: { readonly T3CODE_TELEMETRY_ENABLED?: boolean } = {
+    T3CODE_TELEMETRY_ENABLED: true,
+  },
+) =>
   AnalyticsService.layer.pipe(
     Layer.provideMerge(
       ServerConfig.ServerConfig.layerTest(process.cwd(), { prefix: "t3-telemetry-retry-" }),
@@ -122,7 +128,7 @@ const analyticsLayerWith = (client: HttpClient.HttpClient, policy?: ManagedPolic
     Layer.provide(
       ConfigProvider.layer(
         ConfigProvider.fromUnknown({
-          T3CODE_TELEMETRY_ENABLED: true,
+          ...telemetryEnv,
           T3CODE_POSTHOG_KEY: "phc_test_key",
           T3CODE_POSTHOG_HOST: "http://localhost",
         }),
@@ -152,6 +158,7 @@ const sendFor = (
     AnalyticsService.AnalyticsService | Effect.Services<typeof getTelemetryIdentity>
   > = recordTwentyEvents,
   policy?: ManagedPolicyDocument,
+  telemetryEnv?: { readonly T3CODE_TELEMETRY_ENABLED?: boolean },
 ) =>
   Effect.gen(function* () {
     const batches: Array<ReadonlyArray<SentEvent>> = [];
@@ -166,7 +173,7 @@ const sendFor = (
         return yield* respond(request);
       }),
     );
-    const runtimeLayer = analyticsLayerWith(client, policy);
+    const runtimeLayer = analyticsLayerWith(client, policy, telemetryEnv);
 
     yield* Effect.gen(function* () {
       yield* record;
@@ -178,7 +185,7 @@ const sendFor = (
   });
 
 it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("AnalyticsService test", (it) => {
-  it.effect("waits for desktop shell consent and honors a late telemetry opt-out", () =>
+  it.effect("waits for desktop shell discovery and sends only after an explicit opt-in", () =>
     Effect.gen(function* () {
       const env: NodeJS.ProcessEnv = { T3CODE_DESKTOP_SHELL_DISCOVERY_PENDING: "1" };
       const batches = yield* sendFor(
@@ -188,14 +195,18 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("AnalyticsService
           const analytics = yield* AnalyticsService.AnalyticsService;
           yield* analytics.record("test.before-discovery");
           yield* analytics.flush;
-          env.T3CODE_TELEMETRY_ENABLED = "false";
           delete env.T3CODE_DESKTOP_SHELL_DISCOVERY_PENDING;
+          yield* analytics.record("test.default-off");
+          yield* analytics.flush;
+          env.T3CODE_TELEMETRY_ENABLED = "false";
           yield* analytics.record("test.opted-out");
           yield* analytics.flush;
           env.T3CODE_TELEMETRY_ENABLED = "true";
           yield* analytics.record("test.allowed");
           yield* analytics.flush;
         }),
+        undefined,
+        {},
       ).pipe(Effect.provideService(HostProcess.Environment, env));
       assert.deepEqual(
         batches.flat().map((event) => event.event),
@@ -420,7 +431,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("AnalyticsService
     }),
   );
 
-  it.effect("does not send batch requests when telemetry is disabled", () =>
+  it.effect("does not send batch requests when telemetry is unset", () =>
     Effect.gen(function* () {
       const capturedPaths: Array<string> = [];
       const layerServerConfig = ServerConfig.ServerConfig.layerTest(process.cwd(), {
@@ -429,7 +440,6 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("AnalyticsService
       const layerTelemetry = AnalyticsService.layer.pipe(Layer.provideMerge(layerServerConfig));
       const layerConfig = ConfigProvider.layer(
         ConfigProvider.fromUnknown({
-          T3CODE_TELEMETRY_ENABLED: false,
           T3CODE_POSTHOG_KEY: "phc_test_key",
           T3CODE_POSTHOG_HOST: "http://localhost",
         }),

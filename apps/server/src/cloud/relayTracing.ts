@@ -15,8 +15,7 @@ import { resolveRelayClientTracingConfig } from "./publicConfig.ts";
 const relayClientTracingConfig = resolveRelayClientTracingConfig();
 
 /**
- * `false` once the environment or a managed policy opted out. Until the desktop has read the
- * login shell, a shell-profile opt-out is still unknown, so tracing stays off.
+ * Leave tracing off until desktop shell discovery has loaded the operator's preference.
  */
 export const allowedFor = (
   env: Readonly<Record<string, string | undefined>>,
