@@ -135,7 +135,7 @@ describe("Antigravity Auto", () => {
   );
 
   it.each(["auto", "auto-accept-edits"] as const)(
-    "runs only server-qualified T3 MCP calls unasked in %s",
+    "asks when Antigravity escalates even a T3 MCP call in %s",
     (runtimeMode) => {
       const policy = { runtimeMode, cwd: "/workspace" };
       const request = (
@@ -150,7 +150,7 @@ describe("Antigravity Auto", () => {
         request("Run mcp_t3-code_t3_thread_list?"),
         request("MCP Tool delegate_task", { ServerName: "t3-code", ToolName: "delegate_task" }),
       ]) {
-        expect(antigravityPermissionDisposition(policy, t3Call)).toBe("allow");
+        expect(antigravityPermissionDisposition(policy, t3Call)).toBe("ask");
         expect(
           antigravityPermissionDisposition({ ...policy, approvalPolicy: "on-request" }, t3Call),
         ).toBe("ask");

@@ -99,15 +99,11 @@ describe("acpPermissionDisposition", () => {
     assert.equal(acpPermissionDisposition(policy, permissionRequest("execute")), "deny");
   });
 
-  it("auto-accept-edits approves file changes without locations and asks for the rest", () => {
+  it("asks even for file edits explicitly escalated by an auto-accept-edits agent", () => {
     const autoAcceptEdits: AcpRuntimePolicy = { runtimeMode: "auto-accept-edits", cwd };
-    for (const kind of ["edit", "delete", "move"] as const) {
-      assert.equal(acpPermissionDisposition(autoAcceptEdits, permissionRequest(kind)), "allow");
-    }
-    for (const kind of ["execute", "fetch", "other"] as const) {
+    for (const kind of ["edit", "delete", "move", "execute", "fetch", "other", "read"] as const) {
       assert.equal(acpPermissionDisposition(autoAcceptEdits, permissionRequest(kind)), "ask");
     }
-    assert.equal(acpPermissionDisposition(autoAcceptEdits, permissionRequest("read")), "allow");
     assert.equal(
       acpPermissionDisposition(
         { ...autoAcceptEdits, approvalPolicy: "on-request" },
@@ -117,16 +113,24 @@ describe("acpPermissionDisposition", () => {
     );
   });
 
-  it("auto-allows read-kind permission requests under on-request approval", () => {
+  it("asks for explicit read or write escalations under Auto and on-request approval", () => {
     for (const runtimePolicy of [
       { ...policy, approvalPolicy: "on-request" },
       { ...policy, approvalPolicy: "on-request", sandboxPolicy: { type: "readOnly" } },
       { runtimeMode: "approval-required", cwd },
+      { runtimeMode: "auto", cwd },
     ] satisfies ReadonlyArray<AcpRuntimePolicy>) {
-      for (const kind of ["read", "search", "think"] as const) {
-        assert.equal(acpPermissionDisposition(runtimePolicy, permissionRequest(kind)), "allow");
-      }
-      for (const kind of ["edit", "delete", "move", "execute", "fetch", "other"] as const) {
+      for (const kind of [
+        "read",
+        "search",
+        "think",
+        "edit",
+        "delete",
+        "move",
+        "execute",
+        "fetch",
+        "other",
+      ] as const) {
         assert.equal(acpPermissionDisposition(runtimePolicy, permissionRequest(kind)), "ask");
       }
     }
@@ -249,6 +253,13 @@ describe("acpMcpToolApprovalElicitationDisposition", () => {
 
     assert.equal(acpMcpToolApprovalElicitationDisposition(fullAccess, tagged), "allow");
     assert.equal(acpMcpToolApprovalElicitationDisposition(approvalRequired, tagged), "ask");
+    assert.equal(
+      acpMcpToolApprovalElicitationDisposition(
+        { ...approvalRequired, runtimeMode: "auto" },
+        tagged,
+      ),
+      "ask",
+    );
     assert.equal(
       acpMcpToolApprovalElicitationDisposition(
         { ...fullAccess, approvalPolicy: "on-request" },

@@ -9040,62 +9040,93 @@ describe("AcpAdapterV2", () => {
     }).pipe(Effect.provide(layerTest)),
   );
 
-  it.live("auto-approves tagged MCP elicitations under full-access policy", () =>
-    Effect.gen(function* () {
-      const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-      const selfInvocation = yield* resolveSelfInvocation();
-      const mockAgentPath = yield* bundledMockAgentPath;
-      const instanceId = ProviderInstanceId.make("acp-test-mcp-approval-elicitation");
-      const adapter = yield* makeAcpAdapterV2({
-        instanceId,
-        flavor: {
-          driver: ACP_TEST_DRIVER,
-          capabilities: AcpProviderCapabilitiesV2,
-          makeRuntime: makeMockRuntime({
-            childProcessSpawner,
-            mockAgentPath,
-            environment: { T3_ACP_EMIT_MCP_TOOL_APPROVAL_ELICITATION: "1" },
-          }),
-        },
-        selfInvocation,
-      });
-      const threadId = ThreadId.make("thread-acp-mcp-approval-elicitation");
-      const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
-        runtimeMode: "full-access",
-        interactionMode: "default",
-        cwd: process.cwd(),
-      });
-      const modelSelection = { instanceId, model: "default" } as const;
-      const runtime = yield* adapter.openSession({
-        threadId,
-        providerSessionId: ProviderSessionId.make("provider-session-acp-mcp-approval-elicitation"),
-        modelSelection,
-        runtimePolicy,
-      });
-      const providerThread = yield* runtime.ensureThread({
-        threadId,
-        modelSelection,
-        runtimePolicy,
-      });
-      yield* runtime.startTurn(
-        makeTurnInput({
-          threadId,
-          providerThread,
+  it.live.each(["full-access", "auto"] as const)(
+    "handles tagged MCP approvals under %s",
+    (runtimeMode) =>
+      Effect.gen(function* () {
+        const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+        const selfInvocation = yield* resolveSelfInvocation();
+        const mockAgentPath = yield* bundledMockAgentPath;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const temp = yield* fileSystem.makeTempDirectoryScoped();
+        const responseLog = path.join(temp, "mcp-approval.ndjson");
+        const instanceId = ProviderInstanceId.make("acp-test-mcp-approval-elicitation");
+        const adapter = yield* makeAcpAdapterV2({
           instanceId,
+          flavor: {
+            driver: ACP_TEST_DRIVER,
+            capabilities: AcpProviderCapabilitiesV2,
+            makeRuntime: makeMockRuntime({
+              childProcessSpawner,
+              mockAgentPath,
+              environment: {
+                T3_ACP_EMIT_MCP_TOOL_APPROVAL_ELICITATION: "1",
+                T3_ACP_ELICITATION_SCHEMA: JSON.stringify({ type: "object", properties: {} }),
+                T3_ACP_ELICITATION_RESPONSE_LOG_PATH: responseLog,
+              },
+            }),
+          },
+          selfInvocation,
+        });
+        const threadId = ThreadId.make("thread-acp-mcp-approval-elicitation");
+        const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+          runtimeMode,
+          interactionMode: "default",
+          cwd: process.cwd(),
+        });
+        const modelSelection = { instanceId, model: "default" } as const;
+        const runtime = yield* adapter.openSession({
+          threadId,
+          providerSessionId: ProviderSessionId.make(
+            "provider-session-acp-mcp-approval-elicitation",
+          ),
+          modelSelection,
           runtimePolicy,
-          now: yield* DateTime.now,
-        }),
-      );
-      const events = Array.from(
-        yield* runtime.events.pipe(
-          Stream.takeUntil((event) => event.type === "turn.terminal"),
-          Stream.runCollect,
-        ),
-      );
+        });
+        const providerThread = yield* runtime.ensureThread({
+          threadId,
+          modelSelection,
+          runtimePolicy,
+        });
+        yield* runtime.startTurn(
+          makeTurnInput({
+            threadId,
+            providerThread,
+            instanceId,
+            runtimePolicy,
+            now: yield* DateTime.now,
+          }),
+        );
+        const events = Array.from(
+          yield* runtime.events.pipe(
+            Stream.tap((event) =>
+              event.type === "runtime_request.updated" && event.runtimeRequest.status === "pending"
+                ? Effect.gen(function* () {
+                    assert.equal(runtimeMode, "auto");
+                    assert.equal(event.runtimeRequest.kind, "mcp-elicitation");
+                    yield* runtime.respondToRuntimeRequest({
+                      requestId: event.runtimeRequest.id,
+                      decision: "decline",
+                    });
+                  })
+                : Effect.void,
+            ),
+            Stream.takeUntil((event) => event.type === "turn.terminal"),
+            Stream.runCollect,
+          ),
+        );
 
-      assert.isFalse(events.some((event) => event.type === "runtime_request.updated"));
-      assert.isTrue(events.some((event) => event.type === "turn.terminal"));
-    }).pipe(Effect.provide(layerTest)),
+        assert.equal(
+          events.some((event) => event.type === "runtime_request.updated"),
+          runtimeMode === "auto",
+        );
+        assert.isTrue(events.some((event) => event.type === "turn.terminal"));
+        assert.deepEqual(
+          JSON.parse((yield* fileSystem.readFileString(responseLog)).trim()),
+          runtimeMode === "auto" ? { action: "decline" } : { action: "accept", content: {} },
+        );
+      }).pipe(Effect.provide(layerTest)),
   );
 
   it.live("fails a held native response acknowledgement before normal session close", () =>

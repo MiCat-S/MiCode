@@ -1200,6 +1200,22 @@ describe("ClaudeAdapterV2 session permissions", () => {
     ]);
   });
 
+  it.each(["Bash", "Monitor"])(
+    "approves only the current %s call without a provider suggestion",
+    (toolName) => {
+      const result = ClaudeAdapterV2.permissionResultFromDecision({
+        toolName,
+        decision: "acceptForSession",
+        toolInput: { command: "cat fixture.txt" },
+        toolUseID: "current-shell-call",
+      });
+
+      assert.equal(result.behavior, "allow");
+      assert.equal(result.decisionClassification, "user_temporary");
+      assert.notProperty(result, "updatedPermissions");
+    },
+  );
+
   it("adds a whole-tool session rule when Claude offers no suggestion", () => {
     const result = ClaudeAdapterV2.permissionResultFromDecision({
       toolName: "mcp__t3__custom_tool",
@@ -1223,134 +1239,177 @@ describe("ClaudeAdapterV2 session permissions", () => {
   });
 });
 
-describe("ClaudeAdapterV2 Auto-accept edits", () => {
-  it.effect("asks before a command instead of allowing it", () =>
-    Effect.gen(function* () {
-      const fileSystem = yield* FileSystem.FileSystem;
-      const idAllocator = yield* IdAllocator.IdAllocatorV2;
-      const attachmentsDir = yield* fileSystem.makeTempDirectoryScoped({
-        prefix: "t3-claude-accept-edits-",
-      });
-      let openedOptions: ClaudeAdapterV2.ClaudeAgentSdkQueryOptions | undefined;
-      const adapter = yield* ClaudeAdapterV2.makeClaudeAdapterV2({
-        instanceId: ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID,
-        settings: DEFAULT_CLAUDE_SETTINGS,
-        environment: {},
-        attachmentsDir,
-        fileSystem,
-        path: yield* Path.Path,
-        random: yield* SecureRandom.SecureRandom,
-        idAllocator,
-        queryRunner: {
-          allocateSessionId: Effect.succeed("native-thread-claude-accept-edits"),
-          open: (input) =>
-            Effect.sync(() => {
-              openedOptions = input.options;
-              return {
-                messages: Stream.never,
-                offer: () => Effect.void,
-                setModel: () => Effect.void,
-                applyFlagSettings: () => Effect.void,
-                setPermissionMode: () => Effect.void,
-                renameSession: () => Effect.void,
-                backgroundTasks: () => Effect.succeed(false),
-                mcpServerStatus: Effect.succeed([]),
-                readMcpResource: () => Effect.die("unexpected MCP resource read"),
-                callMcpTool: () => Effect.die("unexpected MCP tool call"),
-                mcpAuthenticate: () => Effect.die("unexpected MCP sign-in"),
-                mcpSubmitOAuthCallbackUrl: () => Effect.die("unexpected MCP sign-in"),
-                reconnectMcpServer: () => Effect.die("unexpected MCP reconnect"),
-                listPermissionRules: Effect.die("unexpected permission rules read"),
-                stopTask: () => Effect.void,
-                interrupt: Effect.void,
-                close: Effect.void,
-              };
-            }),
-          forkSession: () => Effect.die("unused"),
-          subagentLaunchToolUseId: () => Effect.succeed(null),
-          subagentModel: () => Effect.succeed(null),
-          assertComplete: Effect.void,
-        },
-      });
-      const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
-        runtimeMode: "auto-accept-edits",
-        interactionMode: "default",
-        cwd: "/workspace",
-      });
-      const threadId = ThreadId.make("thread-claude-accept-edits");
-      const runtime = yield* adapter.openSession({
-        threadId,
-        providerSessionId: ProviderSessionId.make("provider-session-claude-accept-edits"),
-        modelSelection: CLAUDE_TEST_MODEL_SELECTION,
-        runtimePolicy,
-      });
-      const providerThread = yield* runtime.ensureThread({
-        threadId,
-        modelSelection: CLAUDE_TEST_MODEL_SELECTION,
-        runtimePolicy,
-      });
-      const now = yield* DateTime.now;
-      yield* runtime.startTurn(
-        makeClaudeTestTurnInput({
+describe("ClaudeAdapterV2 escalated approvals", () => {
+  it.effect.each([
+    {
+      runtimeMode: "auto-accept-edits",
+      permissionMode: "acceptEdits",
+      escalation: "ordinary",
+      response: "accept",
+    },
+    { runtimeMode: "auto", permissionMode: "auto", escalation: "ask rule", response: "accept" },
+    { runtimeMode: "auto", permissionMode: "auto", escalation: "classifier", response: "decline" },
+    { runtimeMode: "auto", permissionMode: "auto", escalation: "withdrawn", response: "cancel" },
+  ] as const)(
+    "asks in $runtimeMode for a $escalation request",
+    ({ runtimeMode, permissionMode, escalation, response }) =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const attachmentsDir = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "t3-claude-accept-edits-",
+        });
+        let openedOptions: ClaudeAdapterV2.ClaudeAgentSdkQueryOptions | undefined;
+        const adapter = yield* ClaudeAdapterV2.makeClaudeAdapterV2({
+          instanceId: ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID,
+          settings: DEFAULT_CLAUDE_SETTINGS,
+          environment: {},
+          attachmentsDir,
+          fileSystem,
+          path: yield* Path.Path,
+          random: yield* SecureRandom.SecureRandom,
+          idAllocator,
+          queryRunner: {
+            allocateSessionId: Effect.succeed("native-thread-claude-accept-edits"),
+            open: (input) =>
+              Effect.sync(() => {
+                openedOptions = input.options;
+                return {
+                  messages: Stream.never,
+                  offer: () => Effect.void,
+                  setModel: () => Effect.void,
+                  applyFlagSettings: () => Effect.void,
+                  setPermissionMode: () => Effect.void,
+                  renameSession: () => Effect.void,
+                  backgroundTasks: () => Effect.succeed(false),
+                  mcpServerStatus: Effect.succeed([]),
+                  readMcpResource: () => Effect.die("unexpected MCP resource read"),
+                  callMcpTool: () => Effect.die("unexpected MCP tool call"),
+                  mcpAuthenticate: () => Effect.die("unexpected MCP sign-in"),
+                  mcpSubmitOAuthCallbackUrl: () => Effect.die("unexpected MCP sign-in"),
+                  reconnectMcpServer: () => Effect.die("unexpected MCP reconnect"),
+                  listPermissionRules: Effect.die("unexpected permission rules read"),
+                  stopTask: () => Effect.void,
+                  interrupt: Effect.void,
+                  close: Effect.void,
+                };
+              }),
+            forkSession: () => Effect.die("unused"),
+            subagentLaunchToolUseId: () => Effect.succeed(null),
+            subagentModel: () => Effect.succeed(null),
+            assertComplete: Effect.void,
+          },
+        });
+        const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+          runtimeMode,
+          interactionMode: "default",
+          cwd: "/workspace",
+        });
+        const threadId = ThreadId.make("thread-claude-accept-edits");
+        const runtime = yield* adapter.openSession({
           threadId,
-          providerThread,
-          now,
-          attemptId: RunAttemptId.make("attempt-claude-accept-edits"),
-          text: "Run node.",
-          attachments: [],
+          providerSessionId: ProviderSessionId.make("provider-session-claude-accept-edits"),
+          modelSelection: CLAUDE_TEST_MODEL_SELECTION,
           runtimePolicy,
-        }),
-      );
-      assert.equal(openedOptions?.permissionMode, "acceptEdits");
-      const canUseTool = openedOptions?.canUseTool;
-      assert.isFunction(canUseTool);
+        });
+        const providerThread = yield* runtime.ensureThread({
+          threadId,
+          modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+          runtimePolicy,
+        });
+        const now = yield* DateTime.now;
+        yield* runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId,
+            providerThread,
+            now,
+            attemptId: RunAttemptId.make("attempt-claude-accept-edits"),
+            text: "Run node.",
+            attachments: [],
+            runtimePolicy,
+          }),
+        );
+        assert.equal(openedOptions?.permissionMode, permissionMode);
+        const canUseTool = openedOptions?.canUseTool;
+        assert.isFunction(canUseTool);
 
-      const requestEvent = yield* runtime.events.pipe(
-        Stream.takeUntil(
-          (event) =>
-            event.type === "turn_item.updated" && event.turnItem.type === "approval_request",
-        ),
-        Stream.runCollect,
-        Effect.forkScoped,
-      );
-      const command = { command: "node -e 'console.log(42)'" };
-      const decision = yield* Effect.promise(() =>
-        canUseTool!("Bash", command, {
-          signal: new AbortController().signal,
-          toolUseID: "tool-bash-accept-edits",
-          requestId: "request-bash-accept-edits",
-          description: "Check the Node runtime",
-        }),
-      ).pipe(Effect.forkScoped);
-      const first = yield* Effect.raceFirst(
-        Fiber.join(requestEvent).pipe(Effect.map((event) => ({ type: "request", event }) as const)),
-        Fiber.join(decision).pipe(Effect.map((result) => ({ type: "decision", result }) as const)),
-      );
-      assert.equal(first.type, "request", "the command ran without asking");
-      if (first.type !== "request") return;
-      const event = first.event.find((event) => event.type === "runtime_request.updated");
-      assert.equal(event?.runtimeRequest.kind, "command");
-      const approval = first.event.findLast((event) => event.type === "turn_item.updated");
-      assert.equal(
-        approval?.turnItem.type === "approval_request" ? approval.turnItem.prompt : undefined,
-        command.command,
-      );
+        const requestEvent = yield* runtime.events.pipe(
+          Stream.takeUntil(
+            (event) =>
+              event.type === "turn_item.updated" && event.turnItem.type === "approval_request",
+          ),
+          Stream.runCollect,
+          Effect.forkScoped,
+        );
+        const command = { command: "cat fixture.txt" };
+        const abort = yield* Effect.sync(() => new AbortController());
+        const decision = yield* Effect.promise(() =>
+          canUseTool!("Bash", command, {
+            signal: abort.signal,
+            toolUseID: "tool-bash-accept-edits",
+            requestId: "request-bash-accept-edits",
+            ...(escalation === "ask rule"
+              ? {
+                  matchedAskRule: {
+                    source: "userSettings",
+                    toolName: "Bash",
+                    ruleContent: command.command,
+                  },
+                }
+              : {}),
+            ...(escalation === "classifier"
+              ? { decisionReason: "\u001b[33mManual review requested\u001b[0m" }
+              : {}),
+          }),
+        ).pipe(Effect.forkScoped);
+        const first = yield* Effect.raceFirst(
+          Fiber.join(requestEvent).pipe(
+            Effect.map((event) => ({ type: "request", event }) as const),
+          ),
+          Fiber.join(decision).pipe(
+            Effect.map((result) => ({ type: "decision", result }) as const),
+          ),
+        );
+        assert.equal(first.type, "request", "the command ran without asking");
+        if (first.type !== "request") return;
+        const event = first.event.find((event) => event.type === "runtime_request.updated");
+        assert.equal(event?.runtimeRequest.kind, "command");
+        assert.equal(event?.runtimeRequest.status, "pending");
+        const approval = first.event.findLast((event) => event.type === "turn_item.updated");
+        assert.equal(
+          approval?.turnItem.type === "approval_request" ? approval.turnItem.prompt : undefined,
+          command.command,
+        );
 
-      yield* runtime.respondToRuntimeRequest({
-        requestId: event!.runtimeRequest.id,
-        decision: "accept",
-      });
-      assert.equal((yield* Fiber.join(decision))?.behavior, "allow");
-    }).pipe(
-      Effect.provide(
-        Layer.mergeAll(
-          IdAllocator.layer,
-          McpProviderSessions.layer,
-          NodeServices.layer,
-          NodeCrypto.layer,
+        if (response === "cancel") {
+          abort.abort();
+        } else {
+          yield* runtime.respondToRuntimeRequest({
+            requestId: event!.runtimeRequest.id,
+            decision: response,
+          });
+        }
+        const result = yield* Fiber.join(decision);
+        assert.isNotNull(result);
+        assert.equal(result.behavior, response === "accept" ? "allow" : "deny");
+        assert.equal(
+          result.decisionClassification,
+          response === "accept"
+            ? "user_temporary"
+            : response === "decline"
+              ? "user_reject"
+              : undefined,
+        );
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
         ),
       ),
-    ),
   );
 
   it.effect("keeps an MCP approval prompt on a code point boundary", () =>
@@ -8118,6 +8177,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
 
     const startElicitationTurn = Effect.fnUntraced(function* (
       options?: Parameters<typeof makeWakeHarnessWithOptions>[0],
+      runtimeMode: "auto" | "approval-required" | "full-access" = "approval-required",
     ) {
       const harness = yield* makeWakeHarnessWithOptions(options);
       yield* harness.runtime.startTurn(
@@ -8128,6 +8188,11 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           attemptId: RunAttemptId.make("attempt-claude-elicitation"),
           text: "Deploy web.",
           attachments: [],
+          runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+            runtimeMode,
+            interactionMode: "default",
+            cwd: "/workspace",
+          }),
         }),
       );
       const onElicitation = harness.getOpenedOptions()?.onElicitation;
@@ -8169,7 +8234,6 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           options: [
             { decision: "cancel", label: "Cancel" },
             { decision: "decline", label: "Decline" },
-            { decision: "acceptForSession", label: "Always allow this session" },
             { decision: "accept", label: "Approve" },
           ],
         });
@@ -8212,28 +8276,44 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       }).pipe(Effect.scoped, Effect.provide(testLayer)),
     );
 
-    it.effect("answers a repeated prompt from a session grant without a card", () =>
-      Effect.gen(function* () {
-        const { harness, elicit, awaitCard, runtimeRequests } = yield* startElicitationTurn();
-        const first = yield* elicit(approvalOnly);
-        const request = yield* awaitCard(1);
-        yield* harness.runtime.respondToRuntimeRequest({
-          requestId: request.id,
-          decision: "acceptForSession",
-        });
-        const granted = { action: "accept", content: {} } satisfies ElicitationResult;
-        assert.deepEqual(yield* Fiber.join(first), granted);
+    it.effect.each(["auto", "full-access"] as const)(
+      "scopes repeated MCP prompts in %s mode",
+      (runtimeMode) =>
+        Effect.gen(function* () {
+          const { harness, elicit, awaitCard, runtimeRequests } = yield* startElicitationTurn(
+            undefined,
+            runtimeMode,
+          );
+          const first = yield* elicit(approvalOnly);
+          const request = yield* awaitCard(1);
+          yield* harness.runtime.respondToRuntimeRequest({
+            requestId: request.id,
+            decision: "acceptForSession",
+          });
+          const granted = { action: "accept", content: {} } satisfies ElicitationResult;
+          assert.deepEqual(yield* Fiber.join(first), granted);
 
-        assert.deepEqual(yield* Fiber.join(yield* elicit(approvalOnly)), granted);
-        assert.equal(runtimeRequests().length, 1);
+          const repeated = yield* elicit(approvalOnly);
+          if (runtimeMode === "auto") {
+            const repeatedRequest = yield* awaitCard(2);
+            assert.isUndefined(repeated.pollUnsafe());
+            yield* harness.runtime.respondToRuntimeRequest({
+              requestId: repeatedRequest.id,
+              decision: "decline",
+            });
+            assert.deepEqual(yield* Fiber.join(repeated), { action: "decline" });
+            return;
+          }
+          assert.deepEqual(yield* Fiber.join(repeated), granted);
+          assert.equal(runtimeRequests().length, 1);
 
-        const otherMessage = yield* elicit({ ...approvalOnly, message: "Deploy api?" });
-        yield* awaitCard(2);
-        const otherServer = yield* elicit({ ...approvalOnly, serverName: "builds" });
-        yield* awaitCard(3);
-        assert.isUndefined(otherMessage.pollUnsafe());
-        assert.isUndefined(otherServer.pollUnsafe());
-      }).pipe(Effect.scoped, Effect.provide(testLayer)),
+          const otherMessage = yield* elicit({ ...approvalOnly, message: "Deploy api?" });
+          yield* awaitCard(2);
+          const otherServer = yield* elicit({ ...approvalOnly, serverName: "builds" });
+          yield* awaitCard(3);
+          assert.isUndefined(otherMessage.pollUnsafe());
+          assert.isUndefined(otherServer.pollUnsafe());
+        }).pipe(Effect.scoped, Effect.provide(testLayer)),
     );
 
     it.effect("cancels URL and value forms without a card", () =>

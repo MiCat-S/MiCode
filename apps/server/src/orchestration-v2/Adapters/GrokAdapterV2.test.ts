@@ -230,7 +230,7 @@ describe("ACP permission policy", () => {
         runtimePolicy({ runtimeMode: "approval-required" }),
         permissionRequest("read"),
       ),
-      "allow",
+      "ask",
     );
   });
 });

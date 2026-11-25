@@ -80,11 +80,17 @@ function acpPolicyRequiresApproval(runtimePolicy: AcpRuntimePolicy): boolean {
     : runtimePolicy.approvalPolicy !== "never";
 }
 
+function acpEscalationRequiresApproval(runtimePolicy: AcpRuntimePolicy): boolean {
+  return runtimePolicy.approvalPolicy === undefined
+    ? runtimePolicy.runtimeMode !== "full-access"
+    : runtimePolicy.approvalPolicy !== "never";
+}
+
 function isAcpReadKind(toolKind: string): boolean {
   return toolKind === "read" || toolKind === "search" || toolKind === "think";
 }
 
-/** Reads never ask; an absent sandbox implies read-only in approval-required mode. */
+/** Known sandboxes permit reads. Explicit permission requests are handled separately. */
 function acpReadDisposition(runtimePolicy: AcpRuntimePolicy): "allow" | "deny" {
   switch (unknownRecord(runtimePolicy.sandboxPolicy)?.type) {
     case undefined:
@@ -195,10 +201,14 @@ export function acpPermissionDisposition(
   runtimePolicy: AcpRuntimePolicy,
   request: EffectAcpSchema.RequestPermissionRequest,
 ): AcpPermissionDisposition {
-  return acpOperationDisposition(runtimePolicy, {
+  const disposition = acpOperationDisposition(runtimePolicy, {
     kind: request.toolCall.kind,
     locations: request.toolCall.locations,
   });
+  // The agent explicitly requested the user's permission; a coarse tool kind cannot grant it.
+  return disposition === "allow" && acpEscalationRequiresApproval(runtimePolicy)
+    ? "ask"
+    : disposition;
 }
 
 export function acpMcpToolApprovalElicitationDisposition(
@@ -213,8 +223,7 @@ export function acpMcpToolApprovalElicitationDisposition(
   ) {
     return undefined;
   }
-  // T3's authenticated MCP endpoint enforces scope; only explicit approval mode needs a user prompt.
-  return acpPolicyRequiresApproval(runtimePolicy) ? "ask" : "allow";
+  return acpEscalationRequiresApproval(runtimePolicy) ? "ask" : "allow";
 }
 
 export function acpClientExecuteDisposition(

@@ -6609,14 +6609,17 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
 
         const beginApprovalRequest = Effect.fnUntraced(function* (
           context: ActiveAcpTurn,
-          params: EffectAcpSchema.RequestPermissionRequest,
+          approval: {
+            readonly nativeRequestId: string;
+            readonly requestKind: ProviderRequestKind;
+            readonly prompt?: string;
+            readonly options?: ReadonlyArray<ProviderApprovalOption>;
+          },
           generation: number,
           transportRequestId: string,
         ) {
           yield* closeTextStreams(context);
-          const parsed = parsePermissionRequest(params);
-          const approvalOptions = flavor.approvalOptions?.(params);
-          const nativeRequestId = params.toolCall.toolCallId;
+          const { nativeRequestId, requestKind, prompt, options: approvalOptions } = approval;
           const requestId = yield* idAllocator.allocate.runtimeRequest({
             driver,
             providerTurnId: context.providerTurnId,
@@ -6634,7 +6637,6 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           );
           const now = yield* DateTime.now;
           const nodeId = idAllocator.derive.approvalNode({ requestId });
-          const requestKind = providerRequestKind(parsed.kind);
           const nativeItemRef = { driver, nativeId: nativeRequestId, strength: "weak" as const };
           const ordinal = yield* resolveItemOrdinal(
             context,
@@ -6689,7 +6691,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             type: "approval_request",
             requestId,
             requestKind,
-            ...(parsed.detail === undefined ? {} : { prompt: parsed.detail }),
+            ...(prompt === undefined ? {} : { prompt }),
             ...(approvalOptions === undefined ? {} : { options: approvalOptions }),
           };
           yield* Ref.update(pendingRuntimeRequests, (current) => {
@@ -6731,6 +6733,26 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             transportRequestId,
           } as const;
         });
+
+        const awaitApprovalDecision = (
+          generation: number,
+          pending: {
+            readonly decision: Deferred.Deferred<ProviderApprovalDecision>;
+            readonly requestId: RuntimeRequestId;
+          },
+        ) =>
+          Deferred.await(pending.decision).pipe(
+            Effect.ensuring(
+              runRuntimeCallbackAtGeneration(
+                generation,
+                Ref.update(pendingRuntimeRequests, (current) => {
+                  const updated = new Map(current);
+                  updated.delete(String(pending.requestId));
+                  return updated;
+                }),
+              ).pipe(Effect.asVoid),
+            ),
+          );
 
         const beginUserInputRequest = Effect.fnUntraced(function* (
           request: AcpAdapterV2UserInputRequest,
@@ -7678,11 +7700,20 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                           : ({ outcome: { outcome: "selected", optionId } } as const),
                     };
                   }
+                  const parsed = parsePermissionRequest(params);
+                  const approvalOptions = flavor.approvalOptions?.(params);
                   return {
                     _tag: "Pending" as const,
+                    toolKind: parsed.kind,
+                    approvalOptions,
                     pending: yield* beginApprovalRequest(
                       yield* activeContext,
-                      params,
+                      {
+                        nativeRequestId: params.toolCall.toolCallId,
+                        requestKind: providerRequestKind(parsed.kind),
+                        ...(parsed.detail === undefined ? {} : { prompt: parsed.detail }),
+                        ...(approvalOptions === undefined ? {} : { options: approvalOptions }),
+                      },
                       handlerGeneration,
                       transportRequestId,
                     ),
@@ -7711,29 +7742,11 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                 );
                 return Option.isSome(checked) ? checked.value : yield* Effect.never;
               }
-              const {
-                context,
-                decision: pendingDecision,
-                requestId,
-                transportRequestId: pendingTransportRequestId,
-              } = admitted.value.pending;
-              const parsedPermission = parsePermissionRequest(params);
-              const answered = yield* Deferred.await(pendingDecision).pipe(
-                Effect.ensuring(
-                  runRuntimeCallbackAtGeneration(
-                    handlerGeneration,
-                    Ref.update(pendingRuntimeRequests, (current) => {
-                      const updated = new Map(current);
-                      updated.delete(String(requestId));
-                      return updated;
-                    }),
-                  ).pipe(Effect.asVoid),
-                ),
-              );
+              const { pending, toolKind, approvalOptions: offeredOptions } = admitted.value;
+              const answered = yield* awaitApprovalDecision(handlerGeneration, pending);
               // A card that never offered "this session" (Kiro's, whose
               // allow_always saves a workspace rule) cannot be answered with
               // it by a stale client or a hand-made respond call.
-              const offeredOptions = flavor.approvalOptions?.(params);
               const decision =
                 answered === "acceptForSession" &&
                 offeredOptions !== undefined &&
@@ -7742,9 +7755,9 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                   : answered;
               if (decision === "accept" || decision === "acceptForSession") {
                 clientPolicyGrants.recordApproval({
-                  toolKind: parsedPermission.kind,
+                  toolKind,
                   scope: decision === "acceptForSession" ? "session" : "turn",
-                  turnKey: String(context.providerTurnId),
+                  turnKey: String(pending.context.providerTurnId),
                 });
               }
               const response = (() => {
@@ -7761,7 +7774,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                 Effect.succeed(response),
               );
               if (Option.isNone(checked)) return yield* Effect.never;
-              yield* acknowledgeNativeResponse(handlerGeneration, pendingTransportRequestId);
+              yield* acknowledgeNativeResponse(handlerGeneration, pending.transportRequestId);
               return checked.value;
             }).pipe(
               Effect.mapError(
@@ -7782,7 +7795,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                 (unknownRecord(params._meta)?.codex_approval_kind === "mcp_tool_call" ||
                   transportRequestId.startsWith("mcp_tool_call_approval_"))
               ) {
-                const mcpApprovalDisposition = yield* runRuntimeCallbackAtGeneration(
+                const mcpApproval = yield* runRuntimeCallbackAtGeneration(
                   handlerGeneration,
                   Effect.gen(function* () {
                     const context = yield* activeContext;
@@ -7791,8 +7804,30 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                       params,
                       transportRequestId,
                     );
-                    if (disposition === undefined || disposition === "ask") {
-                      return disposition;
+                    if (disposition === undefined) return undefined;
+                    if (disposition === "ask") {
+                      return yield* beginApprovalRequest(
+                        context,
+                        {
+                          nativeRequestId: transportRequestId,
+                          requestKind: "mcp-elicitation",
+                          prompt: params.message,
+                          options: [
+                            { decision: "decline", label: "Decline" },
+                            { decision: "accept", label: "Approve" },
+                          ],
+                        },
+                        handlerGeneration,
+                        transportRequestId,
+                      ).pipe(
+                        Effect.mapError(
+                          (cause) =>
+                            new EffectAcpErrors.AcpTransportError({
+                              detail: "Failed to publish an ACP MCP approval request",
+                              cause,
+                            }),
+                        ),
+                      );
                     }
                     const nativeResponseAcknowledgement = yield* Deferred.make<
                       void,
@@ -7803,12 +7838,29 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                       transportRequestId,
                       nativeResponseAcknowledgement,
                     );
-                    return disposition;
+                    return "allow" as const;
                   }),
                 );
-                if (Option.isNone(mcpApprovalDisposition)) return yield* Effect.never;
-                if (mcpApprovalDisposition.value === "allow") {
+                if (Option.isNone(mcpApproval)) return yield* Effect.never;
+                if (mcpApproval.value === "allow") {
                   return { action: "accept", content: {} } as const;
+                }
+                if (mcpApproval.value !== undefined) {
+                  const decision = yield* awaitApprovalDecision(
+                    handlerGeneration,
+                    mcpApproval.value,
+                  );
+                  const response =
+                    decision === "accept" || decision === "acceptForSession"
+                      ? ({ action: "accept", content: {} } as const)
+                      : ({ action: decision === "cancel" ? "cancel" : "decline" } as const);
+                  const checked = yield* runRuntimeCallbackAtGeneration(
+                    handlerGeneration,
+                    Effect.succeed(response),
+                  );
+                  if (Option.isNone(checked)) return yield* Effect.never;
+                  yield* acknowledgeNativeResponse(handlerGeneration, transportRequestId);
+                  return checked.value;
                 }
               }
               if (

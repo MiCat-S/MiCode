@@ -2399,11 +2399,6 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
         );
         /** Completed by thread/closed after this connection unsubscribes from the native thread. */
         const threadClosings = new Map<string, Deferred.Deferred<void>>();
-        /** Codex acceptForSession covers only the exact command or patch, not future commands. */
-        const sessionApprovals = new Map<
-          string,
-          { readonly runtimeMode: RuntimeMode; readonly kinds: Set<ProviderRequestKind> }
-        >();
         // `codex resume` and the Codex app list the native name. A failed rename, including on a
         // Codex without thread/name/set, is forgotten so the next turn sends it again.
         const appliedThreadNames = new Map<string, string>();
@@ -2418,29 +2413,6 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           if (renamed) appliedThreadNames.set(threadId, name);
           else appliedThreadNames.delete(threadId);
         });
-        /** Bind answers to the request's approval set so mode changes invalidate late answers. */
-        const endSessionApprovalsOnModeChange = (context: ActiveCodexTurnContext) => {
-          const nativeThreadId = context.providerThread.nativeThreadRef?.nativeId;
-          if (
-            nativeThreadId != null &&
-            sessionApprovals.get(nativeThreadId)?.runtimeMode !==
-              context.input.runtimePolicy.runtimeMode
-          ) {
-            sessionApprovals.delete(nativeThreadId);
-          }
-        };
-        const sessionAllowance = (
-          nativeThreadId: string,
-          context: ActiveCodexTurnContext,
-        ): Set<ProviderRequestKind> => {
-          const runtimeMode = context.input.runtimePolicy.runtimeMode;
-          const allowed = sessionApprovals.get(nativeThreadId);
-          if (allowed?.runtimeMode === runtimeMode) return allowed.kinds;
-          if (allowed !== undefined) return new Set();
-          const kinds = new Set<ProviderRequestKind>();
-          sessionApprovals.set(nativeThreadId, { runtimeMode, kinds });
-          return kinds;
-        };
         /** Retain settled contexts while background commands run so late item events still project. */
         const settledTurns = yield* Ref.make(new Map<string, ActiveCodexTurnContext>());
         const runningCommandItemsByTurn = yield* Ref.make(
@@ -2824,7 +2796,6 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             return next;
           });
           beginTurnTokenUsage(context);
-          endSessionApprovalsOnModeChange(context);
           yield* Ref.update(activeTurns, (current) => {
             const updated = new Map(current);
             updated.set(input.nativeTurnId, context);
@@ -3515,7 +3486,6 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               runningWebSearchItems: new Map(),
             };
             beginTurnTokenUsage(activeContext);
-            endSessionApprovalsOnModeChange(activeContext);
             yield* Ref.update(activeTurns, (current) => {
               const updated = new Map(current);
               updated.set(turn.nativeTurnId, activeContext);
@@ -6328,13 +6298,6 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 decision: "accept",
               } satisfies CodexSchema.CommandExecutionRequestApprovalResponse;
             }
-            const allowance = sessionAllowance(payload.threadId, context);
-            if (allowance.has("command")) {
-              return {
-                decision: "acceptForSession",
-              } satisfies CodexSchema.CommandExecutionRequestApprovalResponse;
-            }
-
             const nativeRequestId = payload.approvalId ?? payload.itemId;
             const artifacts = yield* buildApprovalRequestArtifacts({
               context,
@@ -6380,9 +6343,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 }),
               ),
             );
-            if (resolved === "acceptForSession" || resolved === "acceptAlways") {
-              allowance.add("command");
-            }
+            // Codex owns the scope of a session grant; a later callback is a fresh request.
             return {
               decision: resolved === "acceptAlways" ? "acceptForSession" : resolved,
             } satisfies CodexSchema.CommandExecutionRequestApprovalResponse;
@@ -6398,13 +6359,6 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 payload,
               );
             }
-            const allowance = sessionAllowance(payload.threadId, context);
-            if (allowance.has("file-change")) {
-              return {
-                decision: "acceptForSession",
-              } satisfies CodexSchema.FileChangeRequestApprovalResponse;
-            }
-
             const artifacts = yield* buildApprovalRequestArtifacts({
               context,
               nativeItemId: payload.itemId,
@@ -6453,9 +6407,6 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 }),
               ),
             );
-            if (resolved === "acceptForSession" || resolved === "acceptAlways") {
-              allowance.add("file-change");
-            }
             return {
               decision: resolved === "acceptAlways" ? "acceptForSession" : resolved,
             } satisfies CodexSchema.FileChangeRequestApprovalResponse;
@@ -6617,13 +6568,6 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 payload,
               );
             }
-            const allowance = sessionAllowance(payload.conversationId, context);
-            if (allowance.has("command")) {
-              return {
-                decision: "approved_for_session",
-              } satisfies CodexSchema.ExecCommandApprovalResponse;
-            }
-
             const nativeRequestId = payload.approvalId ?? payload.callId;
             const artifacts = yield* buildApprovalRequestArtifacts({
               context,
@@ -6673,9 +6617,6 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 }),
               ),
             );
-            if (resolved === "acceptForSession" || resolved === "acceptAlways") {
-              allowance.add("command");
-            }
             return {
               decision: approvalDecisionToLegacyReviewDecision(resolved),
             } satisfies CodexSchema.ExecCommandApprovalResponse;
@@ -6691,13 +6632,6 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 payload,
               );
             }
-            const allowance = sessionAllowance(payload.conversationId, context);
-            if (allowance.has("file-change")) {
-              return {
-                decision: "approved_for_session",
-              } satisfies CodexSchema.ApplyPatchApprovalResponse;
-            }
-
             const artifacts = yield* buildApprovalRequestArtifacts({
               context,
               nativeItemId: payload.callId,
@@ -6742,9 +6676,6 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 }),
               ),
             );
-            if (resolved === "acceptForSession" || resolved === "acceptAlways") {
-              allowance.add("file-change");
-            }
             return {
               decision: approvalDecisionToLegacyReviewDecision(resolved),
             } satisfies CodexSchema.ApplyPatchApprovalResponse;
@@ -8755,7 +8686,6 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           unloadThread: Effect.fn("CodexAdapterV2.unloadThread")(
             function* (unloadInput) {
               const nativeThreadId = yield* getNativeThreadId(unloadInput.providerThread);
-              sessionApprovals.delete(nativeThreadId);
               // Archive also unloads, inline and without thread/closed; resumeNativeThread
               // unarchives it on the next turn.
               if (unloadInput.archive === true) {

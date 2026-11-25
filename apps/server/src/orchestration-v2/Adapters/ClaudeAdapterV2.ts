@@ -3789,12 +3789,11 @@ export function claudeRuntimeQueryPolicyForRuntimePolicy(
     readOnlyTools !== undefined && readOnlyPolicyAllowsGlobalReads(runtimePolicy)
       ? readOnlyTools
       : undefined;
-  // acceptEdits approves edits before the callback; the callback must ask for everything else.
+  // Claude handles mode-approved actions before the callback; escalations still need approval.
   const installPermissionCallback =
     downgraded ||
     (runtimePolicy.approvalPolicy === undefined
-      ? runtimePolicy.runtimeMode === "approval-required" ||
-        runtimePolicy.runtimeMode === "auto-accept-edits"
+      ? runtimePolicy.runtimeMode !== "full-access"
       : runtimePolicy.approvalPolicy !== "never");
 
   if (permissionMode === "plan") {
@@ -4711,6 +4710,7 @@ const CLAUDE_NO_STANDING_GRANT_OPTIONS = [
 export function claudeApprovalPresentation(input: {
   readonly permissionMode: PermissionMode;
   readonly prompt: string;
+  readonly sessionApprovalAvailable?: boolean;
   readonly callbackOptions: Pick<
     Parameters<CanUseTool>[2],
     "decisionReason" | "matchedAskRule" | "suppressAlwaysAllowRule"
@@ -4734,9 +4734,12 @@ export function claudeApprovalPresentation(input: {
         ? "provider_check"
         : "ask_rule";
   return {
-    ...(reason === "" || reason === input.prompt ? {} : { reason }),
+    ...(reason === "" || reason === NodeUtil.stripVTControlCharacters(input.prompt).trim()
+      ? {}
+      : { reason }),
     ...(fullAccessOverride === undefined ? {} : { fullAccessOverride }),
-    ...(input.callbackOptions.suppressAlwaysAllowRule === true
+    ...(input.callbackOptions.suppressAlwaysAllowRule === true ||
+    input.sessionApprovalAvailable === false
       ? { options: CLAUDE_NO_STANDING_GRANT_OPTIONS }
       : {}),
   };
@@ -4753,22 +4756,24 @@ export function permissionResultFromDecision(input: {
   readonly managedCeiling?: boolean;
 }): PermissionResult {
   if (input.decision === "accept" || input.decision === "acceptForSession") {
+    const updates =
+      input.decision === "acceptForSession"
+        ? toSessionPermissionUpdates(input.toolName, input.suggestions, input.managedCeiling)
+        : [];
     return {
       behavior: "allow",
       updatedInput: input.toolInput,
       toolUseID: input.toolUseID,
-      decisionClassification:
-        input.decision === "acceptForSession" ? "user_permanent" : "user_temporary",
-      ...(input.decision === "acceptForSession"
-        ? {
-            updatedPermissions: toSessionPermissionUpdates(
-              input.toolName,
-              input.managedCeiling === true
-                ? input.suggestions?.filter((suggestion) => suggestion.type !== "setMode")
-                : input.suggestions,
-            ),
-          }
-        : {}),
+      decisionClassification: updates.length > 0 ? "user_permanent" : "user_temporary",
+      ...(updates.length > 0 ? { updatedPermissions: updates } : {}),
+    };
+  }
+  if (input.decision === "cancel") {
+    return {
+      behavior: "deny",
+      message: "Tool execution was cancelled.",
+      toolUseID: input.toolUseID,
+      interrupt: true,
     };
   }
 
@@ -4777,26 +4782,25 @@ export function permissionResultFromDecision(input: {
     behavior: "deny",
     message: feedback
       ? `The user declined this tool call and said:\n${feedback}`
-      : input.decision === "cancel"
-        ? "User cancelled tool execution."
-        : "User declined tool execution.",
+      : "User declined tool execution.",
     toolUseID: input.toolUseID,
     decisionClassification: "user_reject",
-    ...(input.decision === "cancel" ? { interrupt: true } : {}),
   };
 }
 
 function toSessionPermissionUpdates(
   toolName: string,
   suggestions: ReadonlyArray<PermissionUpdate> | undefined,
+  managedCeiling = false,
 ): Array<PermissionUpdate> {
-  const updates = (suggestions ?? []).map((suggestion): PermissionUpdate => ({
-    ...suggestion,
-    destination: "session",
-  }));
+  const updates = (suggestions ?? [])
+    .filter((suggestion) => !managedCeiling || suggestion.type !== "setMode")
+    .map((suggestion): PermissionUpdate => ({ ...suggestion, destination: "session" }));
   if (updates.length > 0) {
     return updates;
   }
+  // Only the SDK can supply a scoped shell rule. A bare rule grants unrelated commands.
+  if (toolName === "Bash" || toolName === "Monitor") return [];
   return [
     {
       type: "addRules",
@@ -4822,8 +4826,7 @@ export const awaitClaudeApprovalDecision = Effect.fn("awaitClaudeApprovalDecisio
   return yield* Effect.raceFirst(Deferred.await(decision), cancellation);
 });
 
-// MCP servers such as Computer Use ask on every call and expect the client to
-// remember a session grant, as Codex does. The CLI drops a reply's `_meta.persist`.
+// The CLI drops the native session grant. Only Full access may reuse a grant keyed by display text.
 const CLAUDE_MCP_ELICITATION_OPTIONS: ReadonlyArray<ProviderApprovalOption> = [
   { decision: "cancel", label: "Cancel" },
   { decision: "decline", label: "Decline" },
@@ -13079,8 +13082,12 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             (typeof command === "string" && command.trim() !== "" ? command : undefined) ??
             callbackOptions.title ??
             callbackOptions.description ??
-            callbackOptions.decisionReason ??
-            summarizeClaudeToolRequest(toolName, nativeToolInput);
+            (safetyReason || summarizeClaudeToolRequest(toolName, nativeToolInput));
+          const managedCeiling = context.input.runtimePolicy.maxRuntimeMode !== undefined;
+          const sessionApprovalAvailable =
+            callbackOptions.suppressAlwaysAllowRule !== true &&
+            toSessionPermissionUpdates(toolName, callbackOptions.suggestions, managedCeiling)
+              .length > 0;
           const artifacts = yield* buildApprovalRequestArtifacts({
             context,
             nativeItemId: nativeRequestId,
@@ -13090,6 +13097,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             presentation: claudeApprovalPresentation({
               permissionMode: context.queryPolicy.permissionMode,
               prompt,
+              sessionApprovalAvailable,
               callbackOptions,
             }),
           });
@@ -13141,9 +13149,13 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           return permissionResultFromDecision({
             toolName,
             ...resolvedDecision,
+            decision:
+              resolvedDecision.decision === "acceptForSession" && !sessionApprovalAvailable
+                ? "accept"
+                : resolvedDecision.decision,
             toolInput,
             toolUseID: callbackOptions.toolUseID,
-            managedCeiling: context.input.runtimePolicy.maxRuntimeMode !== undefined,
+            managedCeiling,
             ...(callbackOptions.suggestions === undefined
               ? {}
               : { suggestions: callbackOptions.suggestions }),
@@ -13175,8 +13187,14 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             // request was dismissed and may be asked another way.
             return { action: "cancel" } satisfies ElicitationResult;
           }
-          const grantKey = `${request.serverName}\u0000${request.message}`;
-          if ((yield* Ref.get(mcpElicitationSessionGrants)).has(grantKey)) {
+          const runtimePolicy = context.input.runtimePolicy;
+          const grantKey =
+            context.queryPolicy.permissionMode === "bypassPermissions" &&
+            (runtimePolicy.runtimeMode === "full-access" ||
+              runtimePolicy.approvalPolicy === "never")
+              ? `${request.serverName}\u0000${request.message}`
+              : null;
+          if (grantKey !== null && (yield* Ref.get(mcpElicitationSessionGrants)).has(grantKey)) {
             return acceptance;
           }
           // The CLI waits on this answer, so a turn held for its prompt echo
@@ -13195,7 +13213,12 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             requestKind: "mcp-elicitation",
             prompt: request.message,
             appName: request.displayName ?? request.title ?? request.serverName,
-            options: CLAUDE_MCP_ELICITATION_OPTIONS,
+            options:
+              grantKey === null
+                ? CLAUDE_MCP_ELICITATION_OPTIONS.filter(
+                    (option) => option.decision !== "acceptForSession",
+                  )
+                : CLAUDE_MCP_ELICITATION_OPTIONS,
           });
           const decision = yield* Deferred.make<ClaudeApprovalResponse>();
           yield* Ref.update(pendingRuntimeRequests, (current) => {
@@ -13265,15 +13288,14 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               runtimeRequest: { ...artifacts.request, status: "cancelled", resolvedAt: now },
             });
           }
-          if (resolved === "acceptForSession") {
+          if (resolved === "acceptForSession" && grantKey !== null) {
             yield* Ref.update(mcpElicitationSessionGrants, (current) =>
               new Set(current).add(grantKey),
             );
-            return acceptance;
           }
           // Never null: the SDK reads null as answered out of band and leaves
           // the server waiting.
-          return resolved === "accept"
+          return resolved === "accept" || resolved === "acceptForSession"
             ? acceptance
             : ({
                 action: resolved === "cancel" ? "cancel" : "decline",

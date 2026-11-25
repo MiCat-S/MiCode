@@ -4207,7 +4207,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     ),
   );
 
-  it.effect("stops asking for commands the user allowed for the session", () =>
+  it.effect("keeps later escalations separate from a native session approval", () =>
     Effect.gen(function* () {
       const nativeThreadId = "session-approval-thread";
       const turnIds = [
@@ -4325,14 +4325,14 @@ describe("CodexAdapterV2 post-settle continuation", () => {
             itemId: "first-command",
             decision: "acceptForSession",
           }),
-          patchRequest!,
           ...approval({
             id: 101,
             turnId: turnIds[0]!,
             kind: "commandExecution",
             itemId: "second-command",
-            decision: "acceptForSession",
+            decision: "decline",
           }),
+          patchRequest!,
           turnEvent("turn/completed", turnIds[0]!),
           ...startTurn(1),
           patchDecision!,
@@ -4395,16 +4395,17 @@ describe("CodexAdapterV2 post-settle continuation", () => {
 
       yield* runTurn(0);
       yield* answer(1, "command", "acceptForSession");
-      yield* harness.until(() => requests().length === 2);
+      yield* answer(2, "command", "decline");
+      yield* harness.until(() => requests().length === 3);
       yield* harness.awaitTerminal(1);
       yield* runTurn(1);
-      yield* answer(2, "file-change", "acceptForSession");
+      yield* answer(3, "file-change", "acceptForSession");
       yield* harness.awaitTerminal(2);
       yield* runTurn(2);
-      yield* answer(3, "command", "accept");
-      yield* answer(4, "file-change", "accept");
+      yield* answer(4, "command", "accept");
+      yield* answer(5, "file-change", "accept");
       yield* harness.awaitTerminal(3);
-      assert.lengthOf(requests(), 4);
+      assert.lengthOf(requests(), 5);
     }).pipe(
       Effect.provide(
         Layer.mergeAll(
