@@ -91,7 +91,10 @@ server's policy. The hosted web app sends relay traces when configured and has n
 
 ## Mobile app diagnostics
 
-When the iOS or Android app crashes or hits an error, it sends a report to T3 Code: the error
+Crash reports and connection traces are off by default in mobile builds from this repository.
+The app honors previously saved choices for the two switches separately.
+
+When crash reports are enabled and the iOS or Android app crashes or hits an error, it sends a report to T3 Code: the error
 message, the stack trace, the app version, and the device model and OS version. Each launch also
 sends startup timings, and every report carries a random ID for the install. Reports go through
 the T3 Connect relay to Axiom. They do not include your threads, prompts, or connection details,
@@ -99,7 +102,7 @@ but an error message can quote a value the app was handling.
 
 To stop sending them, turn off **Send crash reports** in **Settings > About T3 Code > Diagnostics**.
 
-The mobile app also sends relay connection traces when its build has tracing configured. These
+The mobile app sends relay connection traces when its build has tracing configured and you turn them on. These
 carry an identifier for the current app session. To stop them, turn off **Send connection traces**
 in **Settings > About T3 Code > Diagnostics**, or on the T3 Connect setup sheet shown after you
 sign in. This is separate from crash reports. Server environment variables and managed policy do

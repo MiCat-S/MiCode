@@ -1,0 +1,100 @@
+diff --git a/android/src/main/java/expo/modules/observe/ObservabilityManager.kt b/android/src/main/java/expo/modules/observe/ObservabilityManager.kt
+index c6c4f6e81a51173fbb07b304ef57cfb0d452a175..347c4cabf24cafcd9ba4f110e9d09ab3669bb5e3 100644
+--- a/android/src/main/java/expo/modules/observe/ObservabilityManager.kt
++++ b/android/src/main/java/expo/modules/observe/ObservabilityManager.kt
+@@ -386,7 +386,7 @@ class BaseObservabilityManager(
+   }
+ 
+   private fun shouldDispatch(config: PersistedConfig?, rate: Double?): Boolean {
+-    val dispatchingEnabled = config?.dispatchingEnabled ?: true
++    val dispatchingEnabled = config?.dispatchingEnabled ?: false
+     val dispatchInDebug = config?.dispatchInDebug ?: false
+     // `isDev` is the OR of the JS-bundle dev flag (pushed via `setBundleDefaults` on JS
+     // package import) and the native build's debug flag. Either being true means the
+diff --git a/android/src/main/java/expo/modules/observe/ObservePreferences.kt b/android/src/main/java/expo/modules/observe/ObservePreferences.kt
+index 20124ea6c128d38b8e0daaabd55ecd63cf813e9a..9810c7295c962fdc12898fc22b1f17b4a5c6a3c0 100644
+--- a/android/src/main/java/expo/modules/observe/ObservePreferences.kt
++++ b/android/src/main/java/expo/modules/observe/ObservePreferences.kt
+@@ -2,6 +2,7 @@ package expo.modules.observe
+ 
+ import android.content.Context
+ import androidx.core.content.edit
++import kotlinx.serialization.SerialName
+ import kotlinx.serialization.Serializable
+ import kotlinx.serialization.json.Json
+ 
+@@ -16,6 +17,8 @@ private const val KEY_LAST_DISPATCHED_LOG_ID = "lastDispatchedLogId"
+  */
+ @Serializable
+ data class PersistedConfig(
++  // Older T3 builds cached true even without a user choice.
++  @SerialName("dispatchingEnabledByUser")
+   val dispatchingEnabled: Boolean? = null,
+   val dispatchInDebug: Boolean? = null,
+   val sampleRate: Double? = null,
+diff --git a/ios/Observability.swift b/ios/Observability.swift
+index dc54621bcde10bf14c24fe50bd2668c31bd6fa23..2458bee14d497028eda65e715e90a716d69bb298 100644
+--- a/ios/Observability.swift
++++ b/ios/Observability.swift
+@@ -382,7 +382,7 @@ internal struct ObservabilityManager {
+     isDev: Bool,
+     isInSample: Bool
+   ) -> Bool {
+-    let dispatchingEnabled = config?.dispatchingEnabled ?? true
++    let dispatchingEnabled = config?.dispatchingEnabled ?? false
+     let dispatchInDebug = config?.dispatchInDebug ?? false
+     return dispatchingEnabled && isInSample && (!isDev || dispatchInDebug)
+   }
+diff --git a/ios/ObserveUserDefaults.swift b/ios/ObserveUserDefaults.swift
+index cdfb9f6a7d25174a1cfcfdf596f16498175d3a72..3fcdd7d6980a6b0ea2e74ab2090875b49630f205 100644
+--- a/ios/ObserveUserDefaults.swift
++++ b/ios/ObserveUserDefaults.swift
+@@ -8,6 +8,12 @@ internal struct PersistedConfig: Codable {
+   var dispatchInDebug: Bool?
+   var sampleRate: Double?
+   var errorSampleRate: Double?
++
++  private enum CodingKeys: String, CodingKey {
++    // Older T3 builds cached true even without a user choice.
++    case dispatchingEnabled = "dispatchingEnabledByUser"
++    case dispatchInDebug, sampleRate, errorSampleRate
++  }
+ }
+ 
+ /// Bundle-derived facts pushed from the JS layer at package import time.
+diff --git a/ios/Tests/ObservabilityTests.swift b/ios/Tests/ObservabilityTests.swift
+index c291ebd1dc6ae03e1045d9cc8e6527918d32ab4c..437124bd2918d3bea28eecb4e839bbfa4b931ea4 100644
+--- a/ios/Tests/ObservabilityTests.swift
++++ b/ios/Tests/ObservabilityTests.swift
+@@ -1,4 +1,5 @@
+ import ExpoAppMetrics
++import Foundation
+ import Testing
+ 
+ @testable import ExpoObserve
+@@ -66,14 +67,23 @@ struct ObservabilityShouldDispatchTests {
+   }
+ 
+   @Test
+-  func `nil config defaults dispatchingEnabled true and dispatchInDebug false`() {
++  func `nil config defaults dispatchingEnabled false`() {
+     #expect(
+-      ObservabilityManager.shouldDispatch(config: nil, isDev: false, isInSample: true) == true
++      ObservabilityManager.shouldDispatch(config: nil, isDev: false, isInSample: true) == false
+     )
+     #expect(
+       ObservabilityManager.shouldDispatch(config: nil, isDev: true, isInSample: true) == false
+     )
+   }
++
++  @Test
++  func `old config does not grant permission to dispatch`() throws {
++    let oldConfig = Data(#"{"dispatchingEnabled":true}"#.utf8)
++    let config = try JSONDecoder().decode(PersistedConfig.self, from: oldConfig)
++    #expect(
++      ObservabilityManager.shouldDispatch(config: config, isDev: false, isInSample: true) == false
++    )
++  }
+ }
+ 
+ @Suite("Observability.sampledLogs")
