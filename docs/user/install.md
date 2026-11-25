@@ -1,6 +1,6 @@
 # Install MI Code
 
-[MI Code Releases](https://github.com/MiCat-S/t3code/releases) is the download source for packages published by this fork. Build from source with the [development guide](../operations/00_development.md) when the desired package is unavailable.
+[MI Code Releases](https://github.com/MiCat-S/MiCode/releases) is the download source for packages published by this fork. Build from source with the [development guide](../operations/00_development.md) when the desired package is unavailable.
 
 ## Desktop app
 
@@ -12,7 +12,7 @@ Build for iOS or Android with the [mobile guide](../../apps/mobile/README.md). U
 
 ## Command line
 
-The CLI retains the `t3` command. [MI Code Releases](https://github.com/MiCat-S/t3code/releases) supplies archives to the [shell installer](../../scripts/install.sh) and [PowerShell installer](../../scripts/install.ps1). Run a local source checkout with `vp run dev`.
+The CLI retains the `t3` command. [MI Code Releases](https://github.com/MiCat-S/MiCode/releases) supplies archives to the [shell installer](../../scripts/install.sh) and [PowerShell installer](../../scripts/install.ps1). Run a local source checkout with `vp run dev`.
 
 ## Providers
 

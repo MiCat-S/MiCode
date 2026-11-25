@@ -156,10 +156,10 @@ describe("desktop update UI helpers", () => {
     "falls back to MI Code Releases for an invalid configured repository: %s",
     (repository) => {
       expect(getDesktopUpdateReleaseHistoryUrl(repository)).toBe(
-        "https://github.com/MiCat-S/t3code/releases",
+        "https://github.com/MiCat-S/MiCode/releases",
       );
       expect(getDesktopUpdateReleaseUrl("1.2.3", repository)).toBe(
-        "https://github.com/MiCat-S/t3code/releases/tag/v1.2.3",
+        "https://github.com/MiCat-S/MiCode/releases/tag/v1.2.3",
       );
     },
   );

@@ -93,7 +93,7 @@ server's policy. The hosted web app sends relay traces when configured and has n
 
 Desktop builds from this repository leave the built-in updater off by default. Install a new build
 to update, or set `T3CODE_DISABLE_AUTO_UPDATE=false` in the app's launch environment to opt in to
-[MI Code Releases](https://github.com/MiCat-S/t3code/releases). To move between Stable and
+[MI Code Releases](https://github.com/MiCat-S/MiCode/releases). To move between Stable and
 Nightly, install the desired package from Releases.
 
 ## Mobile app diagnostics

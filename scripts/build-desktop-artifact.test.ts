@@ -540,7 +540,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         {
           provider: "github",
           owner: "MiCat-S",
-          repo: "t3code",
+          repo: "MiCode",
           releaseType: "release",
         },
       ]);
