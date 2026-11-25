@@ -149,6 +149,25 @@ function strictSecretReferencePaths(
 }
 
 it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings", (it) => {
+  it.effect("persists prompt enhancement mode changes and reloads the saved instructions", () =>
+    Effect.gen(function* () {
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const reload = ServerSettingsModule.readServerSettingsFromDisk.pipe(
+        Effect.provide(ManagedPolicy.layerTest()),
+      );
+      const customInstructions = "Use short sentences.";
+      for (const promptEnhancementPrompt of [
+        { mode: "custom", customInstructions },
+        { mode: "default", customInstructions },
+        { mode: "custom", customInstructions: "" },
+      ] as const) {
+        yield* service.updateSettings({ promptEnhancementPrompt });
+        const reloaded = yield* reload;
+        assert.deepEqual(reloaded.promptEnhancementPrompt, promptEnhancementPrompt);
+      }
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
   it.effect("serializes concurrent model preference edits without cancelling duplicate adds", () =>
     Effect.gen(function* () {
       const service = yield* ServerSettingsModule.ServerSettingsService;

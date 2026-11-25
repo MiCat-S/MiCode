@@ -1456,7 +1456,7 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
   promptEnhancementPrompt: PromptEnhancementPromptSettings.pipe(
-    Schema.withDecodingDefault(Effect.succeed({ mode: "default", customInstructions: "" })),
+    Schema.withDecodingDefault(Effect.succeed({})),
   ),
   promptEnhancementModelSelection: Schema.NullOr(ModelSelection).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
