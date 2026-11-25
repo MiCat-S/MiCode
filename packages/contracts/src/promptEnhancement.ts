@@ -20,3 +20,32 @@ export type PromptEnhancementRequest = typeof PromptEnhancementRequest.Type;
 
 export const PromptEnhancementResult = Schema.Struct({ text: PromptEnhancementText });
 export type PromptEnhancementResult = typeof PromptEnhancementResult.Type;
+
+export class PromptEnhancementError extends Schema.TaggedError<PromptEnhancementError>()(
+  "PromptEnhancementError",
+  {
+    reason: Schema.Literals([
+      "empty-draft",
+      "context-unavailable",
+      "generation-failed",
+      "invalid-output",
+      "references-changed",
+    ]),
+    cause: Schema.optionalKey(Schema.Defect()),
+  },
+) {
+  override get message(): string {
+    switch (this.reason) {
+      case "empty-draft":
+        return "Enter a draft to enhance.";
+      case "context-unavailable":
+        return "Could not read the recent conversation.";
+      case "generation-failed":
+        return "The prompt enhancement model could not complete the request.";
+      case "invalid-output":
+        return "The model did not return a usable draft.";
+      case "references-changed":
+        return "The model changed a reference in the draft.";
+    }
+  }
+}

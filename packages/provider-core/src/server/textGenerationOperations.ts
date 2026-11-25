@@ -20,6 +20,7 @@ import {
 } from "./textGenerationUtils.ts";
 
 export const TranscriptionPostProcessingOutput = Schema.Struct({ transcription: Schema.String });
+export const PromptEnhancementOutput = Schema.Struct({ text: Schema.String });
 
 export type Operation = keyof ProviderTextGeneration;
 
@@ -208,5 +209,12 @@ export function fromRunner(name: string, run: Runner): ProviderTextGeneration {
     generateThreadTitle,
     generateReviewGuide,
     generateTranscriptionPostProcessing,
+    generatePromptEnhancement: Effect.fn(`${name}.generatePromptEnhancement`)(function (input) {
+      return run({
+        operation: "generatePromptEnhancement",
+        ...input,
+        outputSchema: PromptEnhancementOutput,
+      });
+    }),
   } satisfies ProviderTextGeneration;
 }

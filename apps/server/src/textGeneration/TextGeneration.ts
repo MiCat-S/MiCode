@@ -41,13 +41,7 @@ export class TextGeneration extends Context.Service<TextGeneration, ProviderText
   "t3/textGeneration/TextGeneration",
 ) {}
 
-type TextGenerationOp =
-  | "generateCommitMessage"
-  | "generatePrContent"
-  | "generateBranchName"
-  | "generateThreadTitle"
-  | "generateReviewGuide"
-  | "generateTranscriptionPostProcessing";
+type TextGenerationOp = TextGenerationOperations.Operation;
 
 const resolveInstance = (
   registry: ProviderInstanceRegistry.ProviderInstanceRegistry["Service"],
@@ -174,6 +168,17 @@ export const make = Effect.gen(function* () {
     );
   });
   return TextGeneration.of({
+    generatePromptEnhancement: Effect.fn("TextGeneration.generatePromptEnhancement")(
+      function (input) {
+        return generate(
+          "generatePromptEnhancement",
+          input.modelSelection,
+          null,
+          (service, modelSelection) =>
+            service.generatePromptEnhancement({ ...input, modelSelection }),
+        );
+      },
+    ),
     generateCommitMessage: Effect.fn("TextGeneration.generateCommitMessage")(function (input) {
       return generate(
         "generateCommitMessage",

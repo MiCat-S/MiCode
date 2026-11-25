@@ -166,7 +166,29 @@ export function resolveSpeechPostProcessingModelSelection(
   settings: ServerSettings,
   providers?: ReadonlyArray<ServerProvider>,
 ): ModelSelection {
-  const selection = settings.speechPostProcessingModelSelection;
+  return resolveTextGenerationOverride(
+    settings,
+    settings.speechPostProcessingModelSelection,
+    providers,
+  );
+}
+
+export function resolvePromptEnhancementModelSelection(
+  settings: ServerSettings,
+  providers?: ReadonlyArray<ServerProvider>,
+): ModelSelection {
+  return resolveTextGenerationOverride(
+    settings,
+    settings.promptEnhancementModelSelection,
+    providers,
+  );
+}
+
+function resolveTextGenerationOverride(
+  settings: ServerSettings,
+  selection: ModelSelection | null,
+  providers: ReadonlyArray<ServerProvider> | undefined,
+): ModelSelection {
   return selection &&
     isModelSelectionProviderEnabled(settings, selection) &&
     isTextGenerationTargetUsable(settings, providers, selection.instanceId)

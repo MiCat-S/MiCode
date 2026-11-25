@@ -315,6 +315,10 @@
       "types": "./src/composerInlineTokens.ts",
       "import": "./src/composerInlineTokens.ts"
     },
+    "./composerModelMentions": {
+      "types": "./src/composerModelMentions.ts",
+      "import": "./src/composerModelMentions.ts"
+    },
     "./assistantCitations": {
       "types": "./src/assistantCitations.ts",
       "import": "./src/assistantCitations.ts"

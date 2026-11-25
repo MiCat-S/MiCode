@@ -205,7 +205,7 @@ import {
 } from "./chat/markdownIslands";
 import type { Element as HastElement } from "hast";
 import { matchInlineSkills } from "@t3tools/shared/inlineSkills";
-import { collectComposerModelMentions } from "@t3tools/client-runtime/composer-model-mentions";
+import { collectComposerModelMentions } from "@t3tools/shared/composerModelMentions";
 import { splitMarkdownBlocks } from "./chat/markdownStreamBlocks";
 import { MarkdownMermaidCodeBlock } from "./chat/MarkdownMermaidCodeBlock";
 import { MarkdownTable } from "./chat/MarkdownTable";

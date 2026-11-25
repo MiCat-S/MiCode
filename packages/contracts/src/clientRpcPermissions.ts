@@ -15,6 +15,7 @@ import {
 } from "./auth.ts";
 import { PeerLinkLinkPairingInput } from "./peerLink.ts";
 import { ORCHESTRATION_V2_WS_METHODS } from "./orchestrationV2.ts";
+import { PromptEnhancementRequest } from "./promptEnhancement.ts";
 import { WS_METHODS } from "./rpc.ts";
 
 /** Incremental client enforcement; the server still authorizes every request. */
@@ -112,6 +113,7 @@ export type ClientGuardedRpcTag = keyof typeof CLIENT_GUARDED_RPC_SCOPES;
 const decodePrepareThread = Schema.decodeUnknownSync(GitPreparePullRequestThreadInput);
 const decodeStackedAction = Schema.decodeUnknownSync(GitRunStackedActionInput);
 const decodeLinkPairing = Schema.decodeUnknownSync(PeerLinkLinkPairingInput);
+const decodePromptEnhancement = Schema.decodeUnknownSync(PromptEnhancementRequest);
 
 export function clientRpcRequiredScopes(
   method: string,
@@ -137,6 +139,13 @@ export function clientRpcRequiredScopes(
   }
   if (method === WS_METHODS.guestShareCreate) {
     return [AuthAccessWriteScope, AuthOrchestrationReadScope];
+  }
+  if (
+    method === WS_METHODS.promptEnhancementEnhance &&
+    input !== undefined &&
+    decodePromptEnhancement(input).threadId !== undefined
+  ) {
+    return [AuthOrchestrationOperateScope, AuthOrchestrationReadScope];
   }
   return Object.hasOwn(CLIENT_GUARDED_RPC_SCOPES, method)
     ? [CLIENT_GUARDED_RPC_SCOPES[method as ClientGuardedRpcTag]]

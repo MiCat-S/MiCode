@@ -6,7 +6,7 @@ import { replaceComposerContextReferences } from "@t3tools/shared/composerContex
 import { composerFileLinksToPlainText } from "@t3tools/shared/composerInlineTokens";
 import { truncate } from "@t3tools/shared/String";
 
-import { collectComposerModelMentions } from "../composerModelMentions.ts";
+import { collectComposerModelMentions } from "@t3tools/shared/composerModelMentions";
 
 export interface ThreadTitleSeedInput {
   readonly text: string;

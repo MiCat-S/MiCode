@@ -3,6 +3,7 @@ import type {
   ChatAttachment,
   ModelSelection,
   ProjectId,
+  PromptEnhancementResult,
   PullRequestReviewGuide,
   TextGenerationError,
 } from "@t3tools/contracts";
@@ -119,6 +120,12 @@ export interface TranscriptionPostProcessingResult {
 }
 
 export interface ProviderTextGeneration {
+  readonly generatePromptEnhancement: (input: {
+    readonly cwd: string;
+    readonly prompt: string;
+    readonly modelSelection: ModelSelection;
+  }) => Effect.Effect<PromptEnhancementResult, TextGenerationError>;
+
   readonly generateTranscriptionPostProcessing: (
     input: TranscriptionPostProcessingInput,
   ) => Effect.Effect<TranscriptionPostProcessingResult, TextGenerationError>;

@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import { collectComposerModelMentions } from "@t3tools/client-runtime/composer-model-mentions";
+import { collectComposerModelMentions } from "@t3tools/shared/composerModelMentions";
 import type { EnvironmentId } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { Atom } from "effect/reactivity";

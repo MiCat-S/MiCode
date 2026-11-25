@@ -3,8 +3,8 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import {
   collectComposerModelMentions,
   formatComposerModelMention,
-  rankComposerModelMentions,
-} from "./composerModelMentions.ts";
+} from "@t3tools/shared/composerModelMentions";
+import { rankComposerModelMentions } from "./composerModelMentions.ts";
 
 const models = [
   { id: "traex:gpt", name: "GPT-6.1", driverKind: "codex", providerDisplayName: "Traex" },

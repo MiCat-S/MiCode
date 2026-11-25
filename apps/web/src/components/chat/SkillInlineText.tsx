@@ -1,4 +1,4 @@
-import { collectComposerModelMentions } from "@t3tools/client-runtime/composer-model-mentions";
+import { collectComposerModelMentions } from "@t3tools/shared/composerModelMentions";
 import type { EnvironmentId, ScopedThreadRef, ServerProviderSkill } from "@t3tools/contracts";
 import { formatProviderSkillDisplayName } from "@t3tools/shared/inlineSkills";
 import { T, useGT } from "gt-react";

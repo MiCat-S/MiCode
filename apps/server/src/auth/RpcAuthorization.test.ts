@@ -166,6 +166,43 @@ describe("RPC scope middleware", () => {
   );
 });
 
+it.effect("allows draft rewriting but requires thread read access to include recent context", () =>
+  Effect.gen(function* () {
+    const method = WS_METHODS.promptEnhancementEnhance;
+    const group = WsRpcGroup.omit(
+      ...[...WsRpcGroup.requests.keys()].filter(
+        (tag): tag is Exclude<keyof typeof RPC_REQUIRED_SCOPES, typeof method> => tag !== method,
+      ),
+    );
+    const texts: string[] = [];
+    const client = yield* RpcTest.makeClient(group).pipe(
+      Effect.provide(
+        Layer.merge(
+          group.toLayerHandler(method, ({ text }) =>
+            Effect.sync(() => {
+              texts.push(text);
+              return { text };
+            }),
+          ),
+          RpcAuthorization.layer([AuthOrchestrationOperateScope]),
+        ),
+      ),
+    );
+
+    expect(yield* client[method]({ text: "Draft only" })).toEqual({ text: "Draft only" });
+    expect(
+      yield* client[method]({
+        text: "Include history",
+        threadId: ThreadId.make("private-thread"),
+      }).pipe(Effect.flip),
+    ).toMatchObject({
+      _tag: "EnvironmentAuthorizationError",
+      requiredPermission: AuthOrchestrationReadScope,
+    });
+    expect(texts).toEqual(["Draft only"]);
+  }),
+);
+
 it.effect("allows issue reads but requires a source-control grant before commenting", () =>
   Effect.gen(function* () {
     const tested = [WS_METHODS.issuesList, WS_METHODS.issuesComment] as const;

@@ -26,6 +26,7 @@ import type { ProviderTextGeneration } from "@t3tools/provider-core/server/textG
 import {
   generatedThreadTitle,
   investigationUnsupported,
+  PromptEnhancementOutput,
   TranscriptionPostProcessingOutput,
 } from "@t3tools/provider-core/server/textGenerationOperations";
 import {
@@ -401,5 +402,15 @@ export const makeMuseTextGeneration = Effect.fn("makeMuseTextGeneration")(functi
     generateThreadTitle,
     generateReviewGuide,
     generateTranscriptionPostProcessing,
+    generatePromptEnhancement: Effect.fn("MuseTextGeneration.generatePromptEnhancement")(
+      function (input) {
+        return runMuseJson({
+          operation: "generatePromptEnhancement",
+          prompt: input.prompt,
+          outputSchema: PromptEnhancementOutput,
+          modelSelection: input.modelSelection,
+        });
+      },
+    ),
   } satisfies ProviderTextGeneration;
 });

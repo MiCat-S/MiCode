@@ -49,10 +49,8 @@ import {
   resolveProviderSkillsForCwd,
   resolveProviderSlashCommandsForCwd,
 } from "@t3tools/client-runtime/providerSkills";
-import {
-  formatComposerModelMention,
-  rankComposerModelMentions,
-} from "@t3tools/client-runtime/composer-model-mentions";
+import { rankComposerModelMentions } from "@t3tools/client-runtime/composer-model-mentions";
+import { formatComposerModelMention } from "@t3tools/shared/composerModelMentions";
 import { useAtomRefresh } from "@effect/atom-react";
 import { Atom } from "effect/reactivity";
 import { msg, useGT, useMessages } from "gt-react-native";
