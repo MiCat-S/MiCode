@@ -25,6 +25,7 @@ MI Code 会定期合并上游 T3 Code 的更新，下面这些地方和上游不
 
 - **macOS。** 在 [Releases](https://github.com/MiCat-S/MiCode/releases) 下载最新的 DMG，拖进「应用程序」。安装包没有经过 Apple 公证，第一次打开如果被 macOS 拦截，到「系统设置 → 隐私与安全性」里点「仍要打开」。装好之后，后续版本可以在应用内更新。
 - **iPhone。** Releases 里提供未签名的 IPA，需要用你自己的 Apple 证书和描述文件签名后才能安装。也可以按[移动端构建说明](./apps/mobile/README.md)自己构建；用 Xcode 个人团队开发时，按其中的本地构建步骤操作。
+- **Android。** Releases 里提供 ARM64 的 APK 安装包，支持 Android 7.0 及以上版本。在手机上打开下载的文件即可安装，系统提示时允许浏览器或文件管理器“安装未知应用”。之后的版本可以直接覆盖安装。
 - **从源码运行。** 在仓库根目录先用 `vp i` 安装锁定版本的依赖，再运行 `vp run dev`，打开终端里输出的链接。[开发指南](./docs/operations/00_development.md)介绍了 macOS、Windows 和 Linux 的构建和打包。
 
 ## 问题反馈

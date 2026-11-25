@@ -25,6 +25,7 @@ MI Code merges upstream T3 Code regularly. It differs from upstream in the ways 
 
 - **macOS.** Download the latest DMG from [Releases](https://github.com/MiCat-S/MiCode/releases) and drag MI Code into Applications. The app is not notarized, so if macOS blocks the first launch, open **System Settings → Privacy & Security** and choose **Open Anyway**. Later versions update from inside the app.
 - **iPhone.** Releases include an unsigned IPA; sign it with your own Apple certificate and provisioning profile to install it. You can also build it yourself with the [mobile build guide](./apps/mobile/README.md), which includes local build steps for an Xcode Personal Team.
+- **Android.** Releases include an ARM64 APK for Android 7.0 and later. Open the downloaded file on your phone to install it, and allow your browser or file manager to install unknown apps when Android asks. Later versions install over the existing app.
 - **From source.** Install the pinned dependencies with `vp i` from the repository root, run `vp run dev`, and open the link it prints. The [development guide](./docs/operations/00_development.md) covers builds and packaging for macOS, Windows, and Linux.
 
 ## Issues
