@@ -8177,7 +8177,6 @@ describe("ClaudeAdapterV2 background wake turns", () => {
 
     const startElicitationTurn = Effect.fnUntraced(function* (
       options?: Parameters<typeof makeWakeHarnessWithOptions>[0],
-      runtimeMode: "auto" | "approval-required" | "full-access" = "approval-required",
     ) {
       const harness = yield* makeWakeHarnessWithOptions(options);
       yield* harness.runtime.startTurn(
@@ -8188,11 +8187,6 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           attemptId: RunAttemptId.make("attempt-claude-elicitation"),
           text: "Deploy web.",
           attachments: [],
-          runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
-            runtimeMode,
-            interactionMode: "default",
-            cwd: "/workspace",
-          }),
         }),
       );
       const onElicitation = harness.getOpenedOptions()?.onElicitation;
@@ -8234,6 +8228,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           options: [
             { decision: "cancel", label: "Cancel" },
             { decision: "decline", label: "Decline" },
+            { decision: "acceptForSession", label: "Always allow this session" },
             { decision: "accept", label: "Approve" },
           ],
         });
@@ -8276,44 +8271,28 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       }).pipe(Effect.scoped, Effect.provide(testLayer)),
     );
 
-    it.effect.each(["auto", "full-access"] as const)(
-      "scopes repeated MCP prompts in %s mode",
-      (runtimeMode) =>
-        Effect.gen(function* () {
-          const { harness, elicit, awaitCard, runtimeRequests } = yield* startElicitationTurn(
-            undefined,
-            runtimeMode,
-          );
-          const first = yield* elicit(approvalOnly);
-          const request = yield* awaitCard(1);
-          yield* harness.runtime.respondToRuntimeRequest({
-            requestId: request.id,
-            decision: "acceptForSession",
-          });
-          const granted = { action: "accept", content: {} } satisfies ElicitationResult;
-          assert.deepEqual(yield* Fiber.join(first), granted);
+    it.effect("answers a repeated prompt from a session grant without a card", () =>
+      Effect.gen(function* () {
+        const { harness, elicit, awaitCard, runtimeRequests } = yield* startElicitationTurn();
+        const first = yield* elicit(approvalOnly);
+        const request = yield* awaitCard(1);
+        yield* harness.runtime.respondToRuntimeRequest({
+          requestId: request.id,
+          decision: "acceptForSession",
+        });
+        const granted = { action: "accept", content: {} } satisfies ElicitationResult;
+        assert.deepEqual(yield* Fiber.join(first), granted);
 
-          const repeated = yield* elicit(approvalOnly);
-          if (runtimeMode === "auto") {
-            const repeatedRequest = yield* awaitCard(2);
-            assert.isUndefined(repeated.pollUnsafe());
-            yield* harness.runtime.respondToRuntimeRequest({
-              requestId: repeatedRequest.id,
-              decision: "decline",
-            });
-            assert.deepEqual(yield* Fiber.join(repeated), { action: "decline" });
-            return;
-          }
-          assert.deepEqual(yield* Fiber.join(repeated), granted);
-          assert.equal(runtimeRequests().length, 1);
+        assert.deepEqual(yield* Fiber.join(yield* elicit(approvalOnly)), granted);
+        assert.equal(runtimeRequests().length, 1);
 
-          const otherMessage = yield* elicit({ ...approvalOnly, message: "Deploy api?" });
-          yield* awaitCard(2);
-          const otherServer = yield* elicit({ ...approvalOnly, serverName: "builds" });
-          yield* awaitCard(3);
-          assert.isUndefined(otherMessage.pollUnsafe());
-          assert.isUndefined(otherServer.pollUnsafe());
-        }).pipe(Effect.scoped, Effect.provide(testLayer)),
+        const otherMessage = yield* elicit({ ...approvalOnly, message: "Deploy api?" });
+        yield* awaitCard(2);
+        const otherServer = yield* elicit({ ...approvalOnly, serverName: "builds" });
+        yield* awaitCard(3);
+        assert.isUndefined(otherMessage.pollUnsafe());
+        assert.isUndefined(otherServer.pollUnsafe());
+      }).pipe(Effect.scoped, Effect.provide(testLayer)),
     );
 
     it.effect("cancels URL and value forms without a card", () =>

@@ -4826,7 +4826,8 @@ export const awaitClaudeApprovalDecision = Effect.fn("awaitClaudeApprovalDecisio
   return yield* Effect.raceFirst(Deferred.await(decision), cancellation);
 });
 
-// The CLI drops the native session grant. Only Full access may reuse a grant keyed by display text.
+// MCP servers such as Computer Use ask on every call and expect the client to
+// remember a session grant, as Codex does. The CLI drops a reply's `_meta.persist`.
 const CLAUDE_MCP_ELICITATION_OPTIONS: ReadonlyArray<ProviderApprovalOption> = [
   { decision: "cancel", label: "Cancel" },
   { decision: "decline", label: "Decline" },
@@ -13187,14 +13188,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             // request was dismissed and may be asked another way.
             return { action: "cancel" } satisfies ElicitationResult;
           }
-          const runtimePolicy = context.input.runtimePolicy;
-          const grantKey =
-            context.queryPolicy.permissionMode === "bypassPermissions" &&
-            (runtimePolicy.runtimeMode === "full-access" ||
-              runtimePolicy.approvalPolicy === "never")
-              ? `${request.serverName}\u0000${request.message}`
-              : null;
-          if (grantKey !== null && (yield* Ref.get(mcpElicitationSessionGrants)).has(grantKey)) {
+          const grantKey = `${request.serverName}\u0000${request.message}`;
+          if ((yield* Ref.get(mcpElicitationSessionGrants)).has(grantKey)) {
             return acceptance;
           }
           // The CLI waits on this answer, so a turn held for its prompt echo
@@ -13213,12 +13208,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             requestKind: "mcp-elicitation",
             prompt: request.message,
             appName: request.displayName ?? request.title ?? request.serverName,
-            options:
-              grantKey === null
-                ? CLAUDE_MCP_ELICITATION_OPTIONS.filter(
-                    (option) => option.decision !== "acceptForSession",
-                  )
-                : CLAUDE_MCP_ELICITATION_OPTIONS,
+            options: CLAUDE_MCP_ELICITATION_OPTIONS,
           });
           const decision = yield* Deferred.make<ClaudeApprovalResponse>();
           yield* Ref.update(pendingRuntimeRequests, (current) => {
@@ -13288,14 +13278,15 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               runtimeRequest: { ...artifacts.request, status: "cancelled", resolvedAt: now },
             });
           }
-          if (resolved === "acceptForSession" && grantKey !== null) {
+          if (resolved === "acceptForSession") {
             yield* Ref.update(mcpElicitationSessionGrants, (current) =>
               new Set(current).add(grantKey),
             );
+            return acceptance;
           }
           // Never null: the SDK reads null as answered out of band and leaves
           // the server waiting.
-          return resolved === "accept" || resolved === "acceptForSession"
+          return resolved === "accept"
             ? acceptance
             : ({
                 action: resolved === "cancel" ? "cancel" : "decline",
