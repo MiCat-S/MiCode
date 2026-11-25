@@ -25,10 +25,6 @@ export interface CloudPublicConfig {
   };
 }
 
-export function trimNonEmpty(value: string | undefined): string | null {
-  return value?.trim() || null;
-}
-
 export function resolveCloudPublicConfig(): CloudPublicConfig {
   return {
     clerkPublishableKey: null,
