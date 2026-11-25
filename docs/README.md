@@ -1,4 +1,4 @@
-# T3 Code docs
+# MI Code docs
 
 ## Using T3 Code
 

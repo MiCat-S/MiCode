@@ -92,8 +92,9 @@ server's policy. The hosted web app sends relay traces when configured and has n
 ## Desktop app updates
 
 Desktop builds from this repository leave the built-in updater off by default. Install a new build
-to update, or set `T3CODE_DISABLE_AUTO_UPDATE=false` in the app's launch environment to opt in when
-an update source is configured.
+to update, or set `T3CODE_DISABLE_AUTO_UPDATE=false` in the app's launch environment to opt in to
+[MI Code Releases](https://github.com/MiCat-S/t3code/releases). To move between Stable and
+Nightly, install the desired package from Releases.
 
 ## Mobile app diagnostics
 
@@ -101,7 +102,7 @@ Crash reports and connection traces are off by default in mobile builds from thi
 The app honors previously saved choices for the two switches separately.
 
 These builds also turn Expo over-the-air updates off by default. Build and install a new app to
-update it, or opt in to Expo updates at build time with `T3CODE_MOBILE_UPDATES_ENABLED=1`.
+update it, or opt in at build time with `T3CODE_MOBILE_UPDATES_ENABLED=1` and your own `T3CODE_EAS_PROJECT_ID`.
 
 When crash reports are enabled and the iOS or Android app crashes or hits an error, it sends a report to T3 Code: the error
 message, the stack trace, the app version, and the device model and OS version. Each launch also
@@ -109,11 +110,11 @@ sends startup timings, and every report carries a random ID for the install. Rep
 the T3 Connect relay to Axiom. They do not include your threads, prompts, or connection details,
 but an error message can quote a value the app was handling.
 
-To stop sending them, turn off **Send crash reports** in **Settings > About T3 Code > Diagnostics**.
+To stop sending them, turn off **Send crash reports** in **Settings > About MI Code > Diagnostics**.
 
 The mobile app sends relay connection traces when its build has tracing configured and you turn them on. These
 carry an identifier for the current app session. To stop them, turn off **Send connection traces**
-in **Settings > About T3 Code > Diagnostics**, or on the T3 Connect setup sheet shown after you
+in **Settings > About MI Code > Diagnostics**, or on the T3 Connect setup sheet shown after you
 sign in. This is separate from crash reports. Server environment variables and managed policy do
 not disable mobile tracing.
 

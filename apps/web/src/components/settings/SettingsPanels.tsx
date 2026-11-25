@@ -177,6 +177,7 @@ function AboutVersionSection() {
   const [switchChannel, setSwitchChannel] = useState<DesktopUpdateChannel | null>(null);
   const [isUpdateActionPending, setIsUpdateActionPending] = useState(false);
   const { environments } = useEnvironments();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
   const sessionStates = useAtomValue(
     environmentSessionStatesAtom(
       environmentIdsKey(environments.map(({ environmentId }) => environmentId)),
@@ -187,6 +188,12 @@ function AboutVersionSection() {
   const checkProviderUpdates = useCheckProviderUpdates();
 
   const hasDesktopBridge = typeof window !== "undefined" && Boolean(window.desktopBridge);
+  const primaryEnvironment = environments.find(
+    ({ environmentId }) => environmentId === primaryEnvironmentId,
+  );
+  const canSwitchDesktopTrack =
+    hasDesktopBridge &&
+    primaryEnvironment?.serverConfig?.environment.capabilities.npmReleaseLookup === true;
   const selectedUpdateChannel = updateState?.channel ?? "latest";
   // The desktop updates this machine, whose policy the primary environment reports.
   const primaryPolicy = usePrimaryManagedPolicy();
@@ -364,7 +371,7 @@ function AboutVersionSection() {
           </Tooltip>
         }
       />
-      {hasDesktopBridge ? (
+      {canSwitchDesktopTrack ? (
         <SettingsRow
           {...setting("update-track")}
           description={
@@ -470,7 +477,7 @@ function AboutVersionSection() {
         />
       ) : null}
       {hasDesktopBridge ? <CliCommandSettingsRow /> : null}
-      {switchChannel === null ? null : (
+      {!canSwitchDesktopTrack || switchChannel === null ? null : (
         <UpdateTrackSwitchDialog channel={switchChannel} onClose={() => setSwitchChannel(null)} />
       )}
     </>
@@ -2586,7 +2593,7 @@ export function AboutSettingsPanel() {
           {...setting("privacy-policy")}
           description={
             telemetryOff === undefined
-              ? gt("How we handle your data, including the anonymous usage data T3 Code collects.")
+              ? gt("How we handle your data, including the anonymous usage data MI Code collects.")
               : gt("How we handle your data. {telemetryOff}", { telemetryOff })
           }
           control={
@@ -2601,7 +2608,7 @@ export function AboutSettingsPanel() {
         />
         <SettingsRow
           {...setting("open-source-licenses")}
-          description={gt("Notices for dependencies, assets, and optional tools used by T3 Code.")}
+          description={gt("Notices for dependencies, assets, and optional tools used by MI Code.")}
           control={
             <Button
               render={<Link to="/settings/open-source-licenses" />}
