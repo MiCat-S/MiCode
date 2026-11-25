@@ -68,7 +68,7 @@ await Effect.runPromise(
           prompt,
           modelSelection: { instanceId: ProviderInstanceId.make("codex"), model },
         });
-        const text = generated.text.trim() ? (restore(generated.text) ?? null) : null;
+        const text = restore(generated.text) || null;
         results.push({ id: fixture.id, sample, text });
         const first = previous === undefined || (yield* Random.nextBoolean);
         review.push({

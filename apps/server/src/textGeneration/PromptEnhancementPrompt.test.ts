@@ -6,6 +6,25 @@ function maskedDraft(prompt: string): string {
 }
 
 describe("prompt enhancement references", () => {
+  it("unwraps a model's duplicate output envelope before restoring references", () => {
+    const { prompt, restore } = buildPromptEnhancementPrompt("Check @README.md please", [], "");
+    const rewritten = maskedDraft(prompt).replace(
+      " please",
+      " for installation steps.\nKeep other sections intact.",
+    );
+    expect(restore(JSON.stringify({ text: rewritten }))).toBe(
+      "Check @README.md for installation steps.\nKeep other sections intact.",
+    );
+    expect(restore('{"text":" "}')).toBe("");
+  });
+
+  it("keeps a JSON draft that already uses the output envelope's shape", () => {
+    const original = '{"text": "check install steps"}';
+    const rewritten = '{"text": "Check the installation steps."}';
+    const { restore } = buildPromptEnhancementPrompt(original, [], "");
+    expect(restore(rewritten)).toBe(rewritten);
+  });
+
   it("round-trips literal mentions, skills, models, citations and context chips", () => {
     const references = [
       '@"src/hello world.ts"',

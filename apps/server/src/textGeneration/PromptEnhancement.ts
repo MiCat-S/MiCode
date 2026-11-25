@@ -87,15 +87,12 @@ const make = Effect.gen(function* () {
             yield* providers.getProviders,
           ),
         });
-        if (generated.text.trim().length === 0) {
-          return yield* new PromptEnhancementError({ reason: "invalid-output" });
-        }
         const restored = restore(generated.text);
         if (restored === undefined) {
           return yield* new PromptEnhancementError({ reason: "references-changed" });
         }
         const result = { text: restored };
-        if (!isResult(result)) {
+        if (restored.length === 0 || !isResult(result)) {
           return yield* new PromptEnhancementError({ reason: "invalid-output" });
         }
         return result;

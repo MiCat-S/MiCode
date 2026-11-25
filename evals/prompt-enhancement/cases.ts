@@ -1,6 +1,14 @@
 // Synthetic examples of the manual composer rewrite requirements.
 export const cases = [
   {
+    id: "polish-rambling-request",
+    draft: "帮我瞅下 @DEPLOY.md 里那个部署的地方好像跟脚本不太一样 帮忙弄一致了 别改别的",
+    recentConversation: [],
+    customInstructions: "",
+    rubric:
+      "Turn this into a direct Chinese request to check that the deployment section matches the script and edit only that section if needed. Preserve @DEPLOY.md, avoid introducing new work, and rephrase the rambling wording rather than only adding punctuation.",
+  },
+  {
     id: "same-language-with-references",
     draft: '用 $react 帮我看下 @"src/list state.ts" 滚动到底闪一下，只查安卓',
     recentConversation: [],

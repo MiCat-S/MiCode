@@ -7,6 +7,6 @@ pnpm prompt-enhancement --model <configured-model> --out runs/prompt-enhancement
 pnpm prompt-enhancement --model <configured-model> --out runs/prompt-enhancement-new --baseline runs/prompt-enhancement/results.json
 ```
 
-The full run makes nine short model calls. Use `--case <id> --samples 1` for a single call. Your Codex account determines the cost.
+The full run makes twelve short model calls. Use `--case <id> --samples 1` for a single call. Your Codex account determines the cost.
 
 Grade `review.json` against each case's rubric before opening `answer-key.json`. A null candidate means the rewrite was empty or failed reference preservation. Add synthetic cases to `cases.ts` when a rewrite exposes a missing behavior.
