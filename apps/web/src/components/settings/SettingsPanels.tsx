@@ -9,6 +9,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import {
   type DesktopUpdateChannel,
+  type DesktopUpdateState,
   IDLE_COMPACTION_MODES,
   type IdleCompactionMode,
   globalIdleCompaction,
@@ -170,6 +171,62 @@ const QUIT_CONFIRMATION_MODE_LABELS: Record<QuitConfirmationMode, string> = {
 };
 
 const DEFAULT_DRIVER_KIND = ProviderDriverKind.make("codex");
+
+function AutomaticUpdateChecksRow({
+  updateState,
+  managed,
+}: {
+  readonly updateState: DesktopUpdateState | null;
+  readonly managed: string | undefined;
+}) {
+  const setting = useSearchableSetting();
+  const gt = useGT();
+  // Holds the requested value until the updater reports it back.
+  const [requested, setRequested] = useState<boolean | null>(null);
+  const checked = requested ?? updateState?.automaticUpdateChecksEnabled ?? true;
+  // Off when the updater is unavailable; the version row above says why.
+  const unavailable = updateState === null || !updateState.enabled;
+
+  const handleCheckedChange = (next: boolean) => {
+    const bridge = window.desktopBridge;
+    if (!bridge) return;
+    setRequested(next);
+    void bridge
+      .setAutomaticUpdateChecksEnabled(next)
+      .catch((error: unknown) => {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: gt("Could not change automatic update checks"),
+            description:
+              error instanceof Error
+                ? (thrownErrorMessage(error, resolveMessage) ?? error.message)
+                : gt("The setting was not saved."),
+          }),
+        );
+      })
+      .finally(() => setRequested(null));
+  };
+
+  return (
+    <SettingsRow
+      {...setting("automatic-update-checks")}
+      description={gt(
+        "Checks for new versions in the background and lets you know when one is available. You still choose when to download and install.",
+      )}
+      managed={managed}
+      control={
+        <Switch
+          checked={checked}
+          disabled={unavailable || requested !== null}
+          onCheckedChange={handleCheckedChange}
+          aria-label={gt("Check for updates automatically")}
+        />
+      }
+    />
+  );
+}
+
 function AboutVersionSection() {
   const setting = useSearchableSetting();
   const gt = useGT();
@@ -372,6 +429,9 @@ function AboutVersionSection() {
           </Tooltip>
         }
       />
+      {hasDesktopBridge ? (
+        <AutomaticUpdateChecksRow updateState={updateState} managed={updatesDenial} />
+      ) : null}
       {canSwitchDesktopTrack ? (
         <SettingsRow
           {...setting("update-track")}

@@ -983,6 +983,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: [msg("about check for updates download install upgrade release")],
   },
   {
+    id: "automatic-update-checks",
+    title: msg("Check for updates automatically"),
+    to: "/settings/about",
+    searchTerms: [msg("auto update background new version notify")],
+    desktopOnly: true,
+  },
+  {
     id: "update-track",
     title: msg("Update track"),
     to: "/settings/about",
