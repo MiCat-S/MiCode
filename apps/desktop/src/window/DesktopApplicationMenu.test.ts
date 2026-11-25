@@ -85,6 +85,7 @@ const layerDesktopUpdates = ({ checkResult }: MenuServices) =>
     emitState: Effect.void,
     disabledReason: Effect.succeedNone,
     configure: Effect.void,
+    setAutomaticUpdateChecksEnabled: () => Effect.die("unexpected automatic update preference"),
     setChannel: () => Effect.die("unexpected setChannel"),
     check: () => (checkResult ? Effect.succeed(checkResult) : Effect.die("unexpected check")),
     download: Effect.die("unexpected download"),

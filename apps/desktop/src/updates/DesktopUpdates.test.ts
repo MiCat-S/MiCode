@@ -116,33 +116,30 @@ describe("DesktopUpdates", () => {
     }),
   );
 
-  it.effect.each([undefined, "true"])(
-    "leaves update checks disabled with a disable flag of %j",
-    (value) => {
-      const harness = makeHarness({ env: { T3CODE_DISABLE_AUTO_UPDATE: value } });
-      const reason = "Automatic updates are disabled by the T3CODE_DISABLE_AUTO_UPDATE setting.";
+  it.effect("honors the external disable flag for both automatic and manual checks", () => {
+    const harness = makeHarness({ env: { T3CODE_DISABLE_AUTO_UPDATE: "true" } });
+    const reason = "Automatic updates are turned off for this installation of MI Code.";
 
-      return Effect.scoped(
-        Effect.gen(function* () {
-          const updates = yield* DesktopUpdates.DesktopUpdates;
-          yield* updates.configure;
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
 
-          const configured = yield* updates.getState;
-          assert.equal(configured.message, reason);
+        const configured = yield* updates.getState;
+        assert.equal(configured.message, reason);
 
-          const changed = yield* updates.setChannel("nightly");
-          assert.equal(changed.channel, "nightly");
-          assert.equal(changed.enabled, false);
-          assert.equal(changed.status, "disabled");
-          assert.equal(changed.message, reason);
-          assert.equal(harness.sentStates.at(-1)?.message, reason);
-          yield* TestClock.adjust("1 hour");
-          assert.isFalse((yield* updates.check("manual")).checked);
-          assert.equal(harness.checkCount(), 0);
-        }),
-      ).pipe(Effect.provide(harness.layer));
-    },
-  );
+        const changed = yield* updates.setChannel("nightly");
+        assert.equal(changed.channel, "nightly");
+        assert.equal(changed.enabled, false);
+        assert.equal(changed.status, "disabled");
+        assert.equal(changed.message, reason);
+        assert.equal(harness.sentStates.at(-1)?.message, reason);
+        yield* TestClock.adjust("1 hour");
+        assert.isFalse((yield* updates.check("manual")).checked);
+        assert.equal(harness.checkCount(), 0);
+      }),
+    ).pipe(Effect.provide(harness.layer));
+  });
 
   it.effect("re-checks an offered update without announcing it again", () => {
     const harness = makeHarness();
@@ -282,6 +279,7 @@ describe("DesktopUpdates", () => {
       Effect.gen(function* () {
         const updates = yield* DesktopUpdates.DesktopUpdates;
         yield* updates.configure;
+        assert.isTrue((yield* updates.getState).automaticUpdateChecksEnabled);
 
         yield* TestClock.adjust("15 seconds");
         assert.equal(harness.checkCount(), 1);
@@ -290,6 +288,34 @@ describe("DesktopUpdates", () => {
         assert.equal(harness.checkCount(), 1);
 
         yield* TestClock.adjust("1 hour");
+        assert.equal(harness.checkCount(), 2);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
+  it.effect("turns off scheduled checks without turning off manual updates", () => {
+    const harness = makeHarness();
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+
+        const off = yield* updates.setAutomaticUpdateChecksEnabled(false);
+        assert.isTrue(off.enabled);
+        assert.isFalse(off.automaticUpdateChecksEnabled);
+        assert.isFalse(harness.sentStates.at(-1)?.automaticUpdateChecksEnabled);
+
+        yield* TestClock.adjust("4 hours");
+        assert.equal(harness.checkCount(), 0);
+        const manual = yield* updates.check("manual");
+        assert.isTrue(manual.checked);
+        assert.isFalse(manual.state.automaticUpdateChecksEnabled);
+
+        assert.isTrue(
+          (yield* updates.setAutomaticUpdateChecksEnabled(true)).automaticUpdateChecksEnabled,
+        );
+        yield* TestClock.adjust("4 hours");
         assert.equal(harness.checkCount(), 2);
       }),
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));

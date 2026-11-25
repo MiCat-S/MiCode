@@ -37,6 +37,7 @@ import {
   downloadUpdate,
   getUpdateState,
   installUpdate,
+  setAutomaticUpdateChecksEnabled,
   setUpdateChannel,
 } from "./methods/updates.ts";
 import {
@@ -174,6 +175,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(syncHtmlFullscreen);
   yield* ipc.handle(probeRemoteEditors);
   yield* ipc.handle(getUpdateState);
+  yield* ipc.handle(setAutomaticUpdateChecksEnabled);
   yield* ipc.handle(setUpdateChannel);
   yield* ipc.handle(downloadUpdate);
   yield* ipc.handle(installUpdate);

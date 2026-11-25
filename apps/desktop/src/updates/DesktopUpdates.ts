@@ -208,6 +208,9 @@ export class DesktopUpdates extends Context.Service<
     readonly emitState: Effect.Effect<void>;
     readonly disabledReason: Effect.Effect<Option.Option<string>>;
     readonly configure: Effect.Effect<void, never, Scope.Scope>;
+    readonly setAutomaticUpdateChecksEnabled: (
+      enabled: boolean,
+    ) => Effect.Effect<DesktopUpdateState, DesktopAppSettings.DesktopSettingsWriteError>;
     /** `minimumVersion` is a track switch's checked release; nothing older is offered after. */
     readonly setChannel: (
       channel: DesktopUpdateChannel,
@@ -362,7 +365,7 @@ function getAutoUpdateDisabledReason(args: {
     return "Automatic updates are only available in packaged production builds.";
   }
   if (args.disabledByEnv) {
-    return "Automatic updates are disabled by the T3CODE_DISABLE_AUTO_UPDATE setting.";
+    return "Automatic updates are turned off for this installation of MI Code.";
   }
   if (args.platform === "linux" && !args.appImage && !args.isDebPackage) {
     return "Automatic updates on Linux require the AppImage or the .deb package.";
@@ -436,22 +439,23 @@ export const make = Effect.gen(function* () {
     Effect.flatMap((state) => electronWindow.sendAll(IpcChannels.UPDATE_STATE_CHANNEL, state)),
   );
 
-  const setState = (state: DesktopUpdateState): Effect.Effect<void> =>
-    stateMutex
-      .withPermits(1)(
-        Ref.set(updateStateRef, state).pipe(Effect.andThen(PubSub.publish(stateChanges, state))),
-      )
-      .pipe(Effect.andThen(emitState));
-
   const updateState = (
     f: (state: DesktopUpdateState) => DesktopUpdateState,
   ): Effect.Effect<DesktopUpdateState> =>
-    Ref.get(updateStateRef).pipe(
-      Effect.flatMap((state) => {
-        const nextState = f(state);
-        return setState(nextState).pipe(Effect.as(nextState));
-      }),
-    );
+    stateMutex
+      .withPermits(1)(
+        Effect.gen(function* () {
+          const state = yield* Ref.get(updateStateRef);
+          const { automaticUpdateChecksEnabled } = yield* desktopSettings.get;
+          const nextState = { ...f(state), automaticUpdateChecksEnabled };
+          yield* Ref.set(updateStateRef, nextState);
+          yield* PubSub.publish(stateChanges, nextState);
+          return nextState;
+        }),
+      )
+      .pipe(Effect.tap(emitState));
+
+  const setState = (state: DesktopUpdateState) => updateState(() => state).pipe(Effect.asVoid);
 
   const readAppUpdateYml = fileSystem.readFileString(environment.appUpdateYmlPath, "utf-8").pipe(
     Effect.option,
@@ -1087,9 +1091,17 @@ export const make = Effect.gen(function* () {
     };
   });
 
+  const checkForAutomaticUpdates = Effect.fn("desktop.updates.checkForAutomaticUpdates")(function* (
+    reason: "startup" | "poll",
+  ) {
+    if ((yield* desktopSettings.get).automaticUpdateChecksEnabled) {
+      yield* checkForUpdates(reason);
+    }
+  });
+
   const startUpdatePollers: Effect.Effect<void, never, Scope.Scope> = Effect.gen(function* () {
     yield* Effect.sleep(AUTO_UPDATE_STARTUP_DELAY).pipe(
-      Effect.andThen(checkForUpdates("startup")),
+      Effect.andThen(checkForAutomaticUpdates("startup")),
       Effect.catchCause((cause) => {
         if (Cause.hasInterruptsOnly(cause)) {
           return Effect.void;
@@ -1104,7 +1116,7 @@ export const make = Effect.gen(function* () {
       Effect.forkScoped,
     );
     yield* Effect.sleep(AUTO_UPDATE_POLL_INTERVAL).pipe(
-      Effect.andThen(checkForUpdates("poll")),
+      Effect.andThen(checkForAutomaticUpdates("poll")),
       Effect.forever,
       Effect.catchCause((cause) => {
         if (Cause.hasInterruptsOnly(cause)) {
@@ -1403,6 +1415,12 @@ export const make = Effect.gen(function* () {
 
       yield* startUpdatePollers;
     }).pipe(Effect.withSpan("desktop.updates.configure")),
+    setAutomaticUpdateChecksEnabled: Effect.fn("desktop.updates.setAutomaticUpdateChecksEnabled")(
+      function* (enabled) {
+        yield* desktopSettings.setAutomaticUpdateChecksEnabled(enabled);
+        return yield* updateState((state) => state);
+      },
+    ),
     setChannel: Effect.fn("desktop.updates.setChannel")(function* (
       nextChannel: DesktopUpdateChannel,
       options?: { readonly minimumVersion?: string | undefined },

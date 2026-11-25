@@ -11,6 +11,7 @@ import { makeComponentLogger } from "./DesktopObservability.ts";
 const { logInfo, logWarning } = makeComponentLogger("desktop-cli-shim");
 
 export const MARKER = "Written by MI Code: runs the desktop app's bundled t3 CLI.";
+const UPSTREAM_MARKER = "Written by T3 Code: runs the desktop app's bundled t3 CLI.";
 
 const SERVER_ENTRY = "apps/server/dist/bin.mjs";
 
@@ -166,7 +167,11 @@ export const install = Effect.gen(function* () {
 
   return yield* Effect.gen(function* () {
     const existing = yield* fs.readFileString(shimPath).pipe(Effect.option);
-    if (Option.isSome(existing) && !existing.value.includes(MARKER)) {
+    if (
+      Option.isSome(existing) &&
+      !existing.value.includes(MARKER) &&
+      !existing.value.includes(UPSTREAM_MARKER)
+    ) {
       yield* logWarning("leaving a t3 launcher the app did not write", { shimPath });
       return Option.none<string>();
     }

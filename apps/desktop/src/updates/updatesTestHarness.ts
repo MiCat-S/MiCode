@@ -49,7 +49,6 @@ export interface UpdatesHarnessOptions {
 export function makeHarness(options: UpdatesHarnessOptions = {}) {
   const config = DesktopConfig.layerTest({
     T3CODE_HOME: `/tmp/t3-desktop-updates-test-${process.pid}`,
-    T3CODE_DISABLE_AUTO_UPDATE: "false",
     T3CODE_DESKTOP_MOCK_UPDATES: "true",
     T3CODE_DESKTOP_MOCK_UPDATE_SERVER_PORT: "4141",
     ...options.env,
@@ -210,6 +209,8 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
       ? Layer.succeed(DesktopAppSettings.DesktopAppSettings, {
           get: Effect.sync(() => testSettings),
           load: Effect.sync(() => testSettings),
+          setAutomaticUpdateChecksEnabled: () =>
+            Effect.die("unexpected automatic update preference"),
           setMainWindowBounds: () => Effect.die("unexpected main window bounds update"),
           setServerExposureMode: () => Effect.die("unexpected server exposure update"),
           setTailscaleServe: () => Effect.die("unexpected Tailscale Serve update"),

@@ -223,6 +223,7 @@ describe("DesktopSettings", () => {
         );
 
         assert.deepEqual(yield* settings.load, {
+          automaticUpdateChecksEnabled: true,
           linuxPasswordStore: "auto",
           localEnvironmentEnabled: true,
           mainWindowBounds: { x: 120, y: 80, width: 1280, height: 900 },
@@ -376,6 +377,7 @@ describe("DesktopSettings", () => {
         });
 
         assert.deepEqual(yield* settings.load, {
+          automaticUpdateChecksEnabled: true,
           linuxPasswordStore: "auto",
           localEnvironmentEnabled: true,
           mainWindowBounds: null,
@@ -405,6 +407,7 @@ describe("DesktopSettings", () => {
         });
 
         assert.deepEqual(yield* settings.load, {
+          automaticUpdateChecksEnabled: true,
           linuxPasswordStore: "auto",
           localEnvironmentEnabled: true,
           mainWindowBounds: null,
@@ -420,6 +423,19 @@ describe("DesktopSettings", () => {
         } satisfies DesktopAppSettings.DesktopSettings);
       }),
       { appVersion: "0.0.17-nightly.20260415.1" },
+    ),
+  );
+
+  it.effect("reloads the saved automatic update preference", () =>
+    withSettings(
+      Effect.gen(function* () {
+        const settings = yield* DesktopAppSettings.DesktopAppSettings;
+        assert.isTrue((yield* settings.load).automaticUpdateChecksEnabled);
+        yield* settings.setAutomaticUpdateChecksEnabled(false);
+        assert.isFalse((yield* settings.load).automaticUpdateChecksEnabled);
+        yield* settings.setAutomaticUpdateChecksEnabled(true);
+        assert.isTrue((yield* settings.load).automaticUpdateChecksEnabled);
+      }),
     ),
   );
 

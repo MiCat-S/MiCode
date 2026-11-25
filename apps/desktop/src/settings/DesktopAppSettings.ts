@@ -28,6 +28,7 @@ import { desktopUpdateChannelOf } from "@t3tools/shared/cliRelease";
 import { isValidDistroName } from "../wsl/wslPathParsing.ts";
 
 export interface DesktopSettings {
+  readonly automaticUpdateChecksEnabled: boolean;
   readonly localEnvironmentEnabled: boolean;
   readonly linuxPasswordStore: LinuxPasswordStorePreference;
   readonly mainWindowBounds: DesktopWindowBounds | null;
@@ -69,6 +70,7 @@ export const DEFAULT_MAIN_WINDOW_SIZE = {
 } as const;
 
 export const DEFAULT_DESKTOP_SETTINGS: DesktopSettings = {
+  automaticUpdateChecksEnabled: true,
   localEnvironmentEnabled: true,
   linuxPasswordStore: DEFAULT_LINUX_PASSWORD_STORE,
   mainWindowBounds: null,
@@ -96,6 +98,7 @@ const optionalReadableKey = <S extends Schema.Top>(schema: S) =>
   Schema.optionalKey(schema.pipe(Schema.catchDecoding(() => Effect.succeedNone)));
 
 const DesktopSettingsDocument = Schema.Struct({
+  automaticUpdateChecksEnabled: optionalReadableKey(Schema.Boolean),
   localEnvironmentEnabled: optionalReadableKey(Schema.Boolean),
   linuxPasswordStore: optionalReadableKey(Schema.Unknown),
   mainWindowBounds: optionalReadableKey(Schema.NullOr(DesktopWindowBoundsDocument)),
@@ -153,6 +156,9 @@ export class DesktopAppSettings extends Context.Service<
   {
     readonly load: Effect.Effect<DesktopSettings>;
     readonly get: Effect.Effect<DesktopSettings>;
+    readonly setAutomaticUpdateChecksEnabled: (
+      enabled: boolean,
+    ) => Effect.Effect<DesktopSettingsChange, DesktopSettingsWriteError>;
     readonly setLocalEnvironmentEnabled: (
       enabled: boolean,
     ) => Effect.Effect<DesktopSettingsChange, DesktopSettingsWriteError>;
@@ -225,6 +231,7 @@ function normalizeDesktopSettingsDocument(
     (parsed.wslBackendEnabled === undefined && parsed.wslMode === "wsl");
 
   return {
+    automaticUpdateChecksEnabled: parsed.automaticUpdateChecksEnabled !== false,
     localEnvironmentEnabled: parsed.localEnvironmentEnabled !== false,
     linuxPasswordStore: normalizeLinuxPasswordStorePreference(parsed.linuxPasswordStore),
     mainWindowBounds,
@@ -249,6 +256,9 @@ function toDesktopSettingsDocument(
 ): DesktopSettingsDocument {
   const document: Mutable<DesktopSettingsDocument> = {};
 
+  if (settings.automaticUpdateChecksEnabled !== defaults.automaticUpdateChecksEnabled) {
+    document.automaticUpdateChecksEnabled = settings.automaticUpdateChecksEnabled;
+  }
   if (settings.localEnvironmentEnabled !== defaults.localEnvironmentEnabled) {
     document.localEnvironmentEnabled = settings.localEnvironmentEnabled;
   }
@@ -333,6 +343,15 @@ function setTailscaleServe(
         tailscaleServeEnabled: input.enabled,
         tailscaleServePort: port,
       };
+}
+
+function setAutomaticUpdateChecksEnabled(
+  settings: DesktopSettings,
+  enabled: boolean,
+): DesktopSettings {
+  return settings.automaticUpdateChecksEnabled === enabled
+    ? settings
+    : { ...settings, automaticUpdateChecksEnabled: enabled };
 }
 
 function setUpdateChannel(
@@ -572,6 +591,11 @@ export const make = Effect.gen(function* () {
 
       return yield* persist((settings) => setTailscaleServe(settings, input));
     }),
+    setAutomaticUpdateChecksEnabled: Effect.fn("desktop.settings.setAutomaticUpdateChecksEnabled")(
+      function* (enabled) {
+        return yield* persist((settings) => setAutomaticUpdateChecksEnabled(settings, enabled));
+      },
+    ),
     setUpdateChannel: Effect.fn("desktop.settings.setUpdateChannel")(function* (channel) {
       yield* Effect.annotateCurrentSpan({ channel });
 
@@ -630,6 +654,9 @@ export const layerTest = (initialSettings: DesktopSettings = DEFAULT_DESKTOP_SET
       return DesktopAppSettings.of({
         get: SynchronizedRef.get(settingsRef),
         load: SynchronizedRef.get(settingsRef),
+        setAutomaticUpdateChecksEnabled: Effect.fn(
+          "DesktopAppSettings.setAutomaticUpdateChecksEnabled",
+        )((enabled) => update((settings) => setAutomaticUpdateChecksEnabled(settings, enabled))),
         setMainWindowBounds: Effect.fn("DesktopAppSettings.setMainWindowBounds")(
           function (bounds, isMaximized) {
             return update((settings) => setMainWindowBounds(settings, bounds, isMaximized));

@@ -80,6 +80,13 @@ vp run dist:desktop:win
 
 Run `vp run dist:desktop:artifact --help` for `--arch`, `--signed`, and `--keep-stage`.
 
+Build MI Code releases with the same macOS signing identity each time so the
+updater can verify the next app. On the release Mac, use the identity in the login keychain.
+
+```sh
+CSC_NAME="MI Code Update Signing" vp run dist:desktop:dmg:arm64 --signed
+```
+
 ### Linux AppImage prerequisites
 
 Build on Linux (the browser-secret helper links against `libsecret`). Install Rust stable (`rustup`), C/C++ build tools, `libsecret` dev headers, `pkg-config`, ImageMagick, and Electron runtime libs (`gtk3`, `nss`, `alsa`, `gbm`):

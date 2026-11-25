@@ -268,6 +268,7 @@ function layerTest(input: {
   const layerDesktopAppSettings = Layer.succeed(DesktopAppSettings.DesktopAppSettings, {
     get: Effect.sync(() => desktopSettings),
     load: Effect.sync(() => desktopSettings),
+    setAutomaticUpdateChecksEnabled: () => Effect.die("unexpected automatic update preference"),
     setMainWindowBounds: (bounds, isMaximized) =>
       Effect.gen(function* () {
         if (input.beforeMainWindowBoundsUpdate) {
