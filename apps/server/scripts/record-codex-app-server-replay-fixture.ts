@@ -2,7 +2,11 @@ import * as NodeOS from "node:os";
 
 import { CODEX_THREAD_CONFIG } from "../src/orchestration-v2/Adapters/CodexAdapterV2.ts";
 import { revertCodexThread } from "../src/provider/CodexThreadRevert.ts";
-import { buildCodexInitializeParams } from "../src/provider/CodexProvider.ts";
+import {
+  codexAppServerEnvironment,
+  makeCodexClientInfo,
+  probeCodexCliVersion,
+} from "../src/provider/CodexProvider.ts";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -1019,7 +1023,15 @@ const makeRecorder = Effect.fn("record-codex-app-server-replay-fixture.makeRecor
   return { path: outPath, setVersion, writeRecord, flush };
 });
 
-function layerCodex({ recorder }: { readonly recorder: Recorder }) {
+function layerCodex({
+  recorder,
+  binaryPath,
+  environment,
+}: {
+  readonly recorder: Recorder;
+  readonly binaryPath: string;
+  readonly environment: NodeJS.ProcessEnv;
+}) {
   const clientRequestMethodById = new Map<string, string>();
   const serverRequestMethodById = new Map<string, string>();
   const clientOptions: CodexClient.CodexAppServerClientOptions = {
@@ -1082,12 +1094,8 @@ function layerCodex({ recorder }: { readonly recorder: Recorder }) {
   return Layer.effect(
     CodexClient.CodexAppServerClient,
     Effect.gen(function* () {
-      // Inheriting the vp shim's VP_TOOL_RECURSION makes Codex's shell `node` calls fail.
-      const { VP_TOOL_RECURSION: _vpToolRecursion, ...environment } =
-        yield* HostProcess.Environment;
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-      const commandName = environment.T3_CODEX_BIN ?? environment.CODEX_BIN ?? "codex";
-      const spawnCommand = yield* resolveSpawnCommand(commandName, ["app-server"], {
+      const spawnCommand = yield* resolveSpawnCommand(binaryPath, ["app-server"], {
         env: environment,
       });
       const handle = yield* spawner.spawn(
@@ -1221,6 +1229,13 @@ const runReplaySession = Effect.fn("record-codex-app-server-replay-fixture.runRe
     const beforeApprovalResponse = () =>
       approvalGate ? Deferred.await(approvalGate) : Effect.void;
     const model = scenarioModel(scenario);
+    // Inheriting the vp shim's VP_TOOL_RECURSION makes Codex's shell `node` calls fail.
+    const { VP_TOOL_RECURSION: _vpToolRecursion, ...hostEnvironment } =
+      yield* HostProcess.Environment;
+    const binaryPath = hostEnvironment.T3_CODEX_BIN ?? hostEnvironment.CODEX_BIN ?? "codex";
+    const environment = codexAppServerEnvironment(hostEnvironment);
+    const launch = { recorder, binaryPath, environment };
+    const version = yield* probeCodexCliVersion({ binaryPath, cwd: process.cwd(), environment });
     const threadRuntimeParams = { cwd: process.cwd(), model, config: CODEX_THREAD_CONFIG };
     const lastTurnIdByThread = new Map<string, string>();
     const runningCommandProcessIds = new Map<string, Map<string, string>>();
@@ -1238,7 +1253,7 @@ const runReplaySession = Effect.fn("record-codex-app-server-replay-fixture.runRe
       });
 
       yield* client.request("initialize", {
-        clientInfo: buildCodexInitializeParams().clientInfo,
+        clientInfo: makeCodexClientInfo(version),
         capabilities: CODEX_CLIENT_CAPABILITIES,
       });
 
@@ -1333,13 +1348,7 @@ const runReplaySession = Effect.fn("record-codex-app-server-replay-fixture.runRe
         const thread = yield* client.request("thread/start", threadRuntimeParams);
         yield* runTurnStep(client, thread.thread.id, firstStep);
         return thread;
-      }).pipe(
-        Effect.provide(
-          layerCodex({
-            recorder,
-          }),
-        ),
-      );
+      }).pipe(Effect.provide(layerCodex(launch)));
 
       yield* recorder.writeRecord({
         type: "runtime_exit",
@@ -1354,13 +1363,7 @@ const runReplaySession = Effect.fn("record-codex-app-server-replay-fixture.runRe
           ...threadRuntimeParams,
         });
         yield* runTurnStep(client, thread.thread.id, secondStep);
-      }).pipe(
-        Effect.provide(
-          layerCodex({
-            recorder,
-          }),
-        ),
-      );
+      }).pipe(Effect.provide(layerCodex(launch)));
       return;
     }
 
@@ -1389,7 +1392,7 @@ const runReplaySession = Effect.fn("record-codex-app-server-replay-fixture.runRe
         yield* runTurnStep(client, thread.thread.id, first);
         yield* runTurnStep(client, thread.thread.id, second);
         return thread.thread.id;
-      }).pipe(Effect.provide(layerCodex({ recorder })));
+      }).pipe(Effect.provide(layerCodex(launch)));
 
       yield* recorder.writeRecord({
         type: "runtime_exit",
@@ -1405,7 +1408,7 @@ const runReplaySession = Effect.fn("record-codex-app-server-replay-fixture.runRe
         yield* revertCodexThread(client, threadId, rollback.numTurns);
         yield* client.request("thread/resume", resumeParams);
         yield* runTurnStep(client, threadId, after);
-      }).pipe(Effect.provide(layerCodex({ recorder })));
+      }).pipe(Effect.provide(layerCodex(launch)));
       return;
     }
 
@@ -1452,13 +1455,7 @@ const runReplaySession = Effect.fn("record-codex-app-server-replay-fixture.runRe
         yield* runTurnStep(client, turnThreadId, step);
         void stepIndex;
       }
-    }).pipe(
-      Effect.provide(
-        layerCodex({
-          recorder,
-        }),
-      ),
-    );
+    }).pipe(Effect.provide(layerCodex(launch)));
   },
 );
 

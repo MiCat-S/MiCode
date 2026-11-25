@@ -58,7 +58,6 @@ import {
   type CodexResetCreditsSummary,
 } from "./codexUsageLimits.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import packageJson from "../../package.json" with { type: "json" };
 const isCodexAppServerSpawnError = Schema.is(CodexErrors.CodexAppServerSpawnError);
 
 type CodexRateLimitsProbe =
@@ -140,7 +139,7 @@ const CODEX_APP_SERVER_PROBE_FORCE_KILL_AFTER = "2 seconds" as const;
 const CODEX_CATALOG_REFRESH_TIMEOUT_MS = 3_000;
 const CODEX_CONFIG_PROBE_TIMEOUT_MS = 3_000;
 const CODEX_CATALOG_REFRESH_POLL = "100 millis" as const;
-const CODEX_CLIENT_NAME = "MI Code";
+const CODEX_TUI_ORIGINATOR = "codex-tui";
 // Handshake plus account/models/skills requests can exceed the shared 10s probe budget.
 const CODEX_AUTH_PROBE_TIMEOUT_MS = 20_000;
 const CODEX_DISCOVERY_MARGIN_MS = 250;
@@ -607,20 +606,16 @@ const requestCodexChatGptModels = Effect.fn("requestCodexChatGptModels")(functio
 export const codexAppServerEnvironment = (
   environment: NodeJS.ProcessEnv | undefined,
 ): NodeJS.ProcessEnv => ({
-  CODEX_INTERNAL_ORIGINATOR_OVERRIDE: CODEX_CLIENT_NAME,
   ...environment,
+  CODEX_INTERNAL_ORIGINATOR_OVERRIDE: CODEX_TUI_ORIGINATOR,
 });
 
-export function buildCodexInitializeParams(): CodexSchema.V1InitializeParams {
+export function makeCodexClientInfo(
+  version: string | null,
+): CodexSchema.V1InitializeParams["clientInfo"] {
   return {
-    clientInfo: {
-      name: CODEX_CLIENT_NAME,
-      title: CODEX_CLIENT_NAME,
-      version: packageJson.version,
-    },
-    capabilities: {
-      experimentalApi: true,
-    },
+    name: CODEX_TUI_ORIGINATOR,
+    version: version ?? "unknown",
   };
 }
 
@@ -633,7 +628,7 @@ const codexProcessEnvironment = Effect.fn("codexProcessEnvironment")(function* (
     ? expandHomePath(input.homePath, yield* HostProcess.HomeDirectory)
     : undefined;
   return {
-    ...codexAppServerEnvironment(input.environment),
+    ...input.environment,
     ...(resolvedHomePath ? { CODEX_HOME: resolvedHomePath } : {}),
   };
 });
@@ -646,7 +641,7 @@ export const withCodexAppServerClient = Effect.fn("withCodexAppServerClient")(fu
   readonly environment?: NodeJS.ProcessEnv | undefined;
 }) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-  const environment = yield* codexProcessEnvironment(input);
+  const environment = codexAppServerEnvironment(yield* codexProcessEnvironment(input));
   const spawnCommand = yield* resolveSpawnCommand(
     input.binaryPath,
     codexAppServerArgs(input.launchArgs),
@@ -675,7 +670,11 @@ export const withCodexAppServerClient = Effect.fn("withCodexAppServerClient")(fu
   const client = yield* Effect.service(CodexClient.CodexAppServerClient).pipe(
     Effect.provide(clientContext),
   );
-  const initialize = yield* client.request("initialize", buildCodexInitializeParams());
+  const version = yield* probeCodexCliVersion({ ...input, environment, extendEnv: true });
+  const initialize = yield* client.request("initialize", {
+    clientInfo: makeCodexClientInfo(version),
+    capabilities: { experimentalApi: true },
+  });
   yield* client.notify("initialized", undefined);
   return { client, initialize, pid: child.pid };
 });
@@ -826,41 +825,38 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
   } satisfies CodexAppServerProviderSnapshot;
 });
 
-// Old CLIs can exit before initialize reports the version needed for compatibility advice.
-const probeCodexCliVersion = Effect.fn("probeCodexCliVersion")(
+export const probeCodexCliVersion = Effect.fn("probeCodexCliVersion")(
   function* (input: {
     readonly binaryPath: string;
-    readonly homePath?: string | undefined;
-    readonly cwd: string;
-    readonly environment?: NodeJS.ProcessEnv | undefined;
+    readonly cwd?: string | undefined;
+    readonly environment: NodeJS.ProcessEnv;
+    readonly extendEnv?: boolean;
+    readonly timeoutMs?: number;
   }) {
-    const environment = yield* codexProcessEnvironment(input);
+    const extendEnv = input.extendEnv ?? false;
     const spawnCommand = yield* resolveSpawnCommand(input.binaryPath, ["--version"], {
-      env: environment,
-      extendEnv: true,
+      env: input.environment,
+      extendEnv,
     });
     const result = yield* spawnAndCollect(
       input.binaryPath,
       ChildProcess.make(spawnCommand.command, spawnCommand.args, {
         cwd: input.cwd,
-        env: environment,
-        extendEnv: true,
+        env: input.environment,
+        extendEnv,
         forceKillAfter: CODEX_APP_SERVER_PROBE_FORCE_KILL_AFTER,
         shell: spawnCommand.shell,
       }),
     );
-    if (result.code !== 0) return null;
-    return CODEX_CLI_VERSION_PATTERN.exec(result.stdout)?.[1] ?? null;
+    return result.code === 0 ? (CODEX_CLI_VERSION_PATTERN.exec(result.stdout)?.[1] ?? null) : null;
   },
-  (effect, input) =>
-    effect.pipe(
-      Effect.timeoutOption(
-        resolveProviderProbeTimeoutMs("codex", DEFAULT_TIMEOUT_MS, input.environment),
-      ),
-    ),
+  (effect, input) => effect.pipe(Effect.timeoutOption(input.timeoutMs ?? DEFAULT_TIMEOUT_MS)),
   Effect.map(Option.getOrNull),
+  Effect.tap((version) =>
+    version === null ? Effect.logDebug("Codex --version did not report a version.") : Effect.void,
+  ),
   Effect.catch((cause) =>
-    Effect.logDebug("Codex --version fallback failed.", { cause }).pipe(Effect.as(null)),
+    Effect.logDebug("Codex --version probe failed.", { cause }).pipe(Effect.as(null)),
   ),
 );
 
@@ -1075,12 +1071,21 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
   if (Result.isFailure(probeResult)) {
     const error = probeResult.failure;
     const installed = !isCodexAppServerSpawnError(error);
+    // Old CLIs can exit before initialize reports the version needed for compatibility advice.
     const version = installed
       ? yield* probeCodexCliVersion({
           binaryPath: codexSettings.binaryPath,
-          homePath: codexSettings.homePath,
           cwd: process.cwd(),
-          environment: resolvedEnvironment,
+          environment: yield* codexProcessEnvironment({
+            homePath: codexSettings.homePath,
+            environment: resolvedEnvironment,
+          }),
+          extendEnv: true,
+          timeoutMs: resolveProviderProbeTimeoutMs(
+            "codex",
+            DEFAULT_TIMEOUT_MS,
+            resolvedEnvironment,
+          ),
         })
       : null;
     return buildServerProvider({

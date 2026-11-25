@@ -66,7 +66,6 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import * as Scope from "effect/Scope";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
-import packageJson from "../../../package.json" with { type: "json" };
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
@@ -712,7 +711,7 @@ function codexReplayPreamble(input: {
         id: 1,
         method: "initialize",
         params: {
-          clientInfo: { name: "MI Code", title: "MI Code", version: packageJson.version },
+          clientInfo: { name: "codex-tui", version: "0.156.1" },
           capabilities: {
             experimentalApi: true,
             optOutNotificationMethods: ["turn/diff/updated"],
@@ -1020,7 +1019,7 @@ describe("CodexAdapterV2 process exit", () => {
         instanceId: CodexAdapterV2.CODEX_DEFAULT_INSTANCE_ID,
         settings: DEFAULT_CODEX_SETTINGS,
         environment: {},
-        clientFactory: { open: () => Effect.succeed(client) },
+        clientFactory: { open: () => Effect.succeed({ client, version: "0.156.1" }) },
         digest: yield* Digest.Digest,
         fileSystem: yield* FileSystem.FileSystem,
         idAllocator: yield* IdAllocator.IdAllocatorV2,
@@ -1133,23 +1132,30 @@ describe("CodexAdapterV2 process exit", () => {
       Layer.provide(
         Layer.succeed(
           ChildProcessSpawner.ChildProcessSpawner,
-          ChildProcessSpawner.make(() =>
-            Effect.succeed(
+          ChildProcessSpawner.make((command) => {
+            assert(command._tag === "StandardCommand");
+            const isVersionProbe = command.args[0] === "--version";
+            assert.equal(command.options.env?.CODEX_INTERNAL_ORIGINATOR_OVERRIDE, "codex-tui");
+            return Effect.succeed(
               ChildProcessSpawner.makeHandle({
                 pid: ChildProcessSpawner.ProcessId(999_999_999),
-                exitCode: Effect.never,
+                exitCode: isVersionProbe
+                  ? Effect.succeed(ChildProcessSpawner.ExitCode(0))
+                  : Effect.never,
                 isRunning: Effect.succeed(true),
                 kill: () => Effect.void,
                 unref: Effect.succeed(Effect.void),
                 stdin: Sink.drain,
-                stdout: Stream.never,
+                stdout: isVersionProbe
+                  ? Stream.make(new TextEncoder().encode("codex-cli 0.156.1\n"))
+                  : Stream.never,
                 stderr: Stream.empty,
                 all: Stream.empty,
                 getInputFd: () => Sink.drain,
                 getOutputFd: () => Stream.empty,
               }),
-            ),
-          ),
+            );
+          }),
         ),
       ),
     );
@@ -1165,7 +1171,14 @@ describe("CodexAdapterV2 process exit", () => {
             settings: DEFAULT_CODEX_SETTINGS,
             environment: {},
           })
-          .pipe(Effect.tap(() => Effect.sync(() => assert.equal(runningAgents, 1)))),
+          .pipe(
+            Effect.tap(({ version }) =>
+              Effect.sync(() => {
+                assert.equal(runningAgents, 1);
+                assert.equal(version, "0.156.1");
+              }),
+            ),
+          ),
       );
       assert.equal(runningAgents, 0);
     }).pipe(Effect.provide(factoryLayer));
@@ -1205,6 +1218,7 @@ describe("CodexAdapterV2 session initialize", () => {
                       }).pipe(Effect.andThen(client.request(method, params))),
                   }) satisfies CodexClient.CodexAppServerClient["Service"],
               ),
+              Effect.map((client) => ({ client, version: "0.156.1" })),
               Effect.mapError(
                 (cause) =>
                   new ProviderAdapter.ProviderAdapterOpenSessionError({
@@ -1788,6 +1802,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
                     }) satisfies CodexClient.CodexAppServerClient["Service"],
                 ),
                 Effect.provide(context),
+                Effect.map((client) => ({ client, version: "0.156.1" })),
               ),
             ),
           ),

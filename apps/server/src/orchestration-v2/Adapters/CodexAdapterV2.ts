@@ -19,9 +19,10 @@ import type { ManagedServerProvider } from "@t3tools/provider-core/server/snapsh
 import type { CodexEffectiveRuntime } from "../../provider/CodexManagedRuntime.ts";
 import { classifyCodexManagedError } from "../../provider/CodexManagedErrors.ts";
 import {
-  buildCodexInitializeParams,
   codexAppServerEnvironment,
   codexDefaultReasoningEffortOverride,
+  makeCodexClientInfo,
+  probeCodexCliVersion,
 } from "../../provider/CodexProvider.ts";
 import {
   codexRateLimitsToUpdate,
@@ -1656,7 +1657,10 @@ export interface CodexAppServerClientFactoryShape {
     readonly settings: CodexSettings;
     readonly environment: NodeJS.ProcessEnv;
   }) => Effect.Effect<
-    CodexClient.CodexAppServerClient["Service"],
+    {
+      readonly client: CodexClient.CodexAppServerClient["Service"];
+      readonly version: string | null;
+    },
     ProviderAdapter.ProviderAdapterOpenSessionError,
     Scope.Scope
   >;
@@ -1975,12 +1979,13 @@ export const layerAppServerClientFactory: Layer.Layer<
     return CodexAppServerClientFactory.of({
       open: Effect.fn("CodexAdapterV2.open")(function* (input) {
         const scope = yield* Scope.Scope;
+        const binaryPath = input.settings.binaryPath || "codex";
         const environment = {
           ...codexAppServerEnvironment(input.environment),
           ...(input.settings.homePath ? { CODEX_HOME: input.settings.homePath } : {}),
         };
         const command = yield* makeCodexAppServerSpawnCommand({
-          command: input.settings.binaryPath || "codex",
+          command: binaryPath,
           args: codexAppServerArgs(
             resolveCodexLaunchArgs(input.settings.launchArgs, input.environment),
           ),
@@ -2015,9 +2020,13 @@ export const layerAppServerClientFactory: Layer.Layer<
                 logger: protocolLogger,
               };
         const context = yield* Layer.build(CodexClient.layerChildProcess(handle, clientOptions));
-        return yield* Effect.service(CodexClient.CodexAppServerClient).pipe(
+        const client = yield* Effect.service(CodexClient.CodexAppServerClient).pipe(
           Effect.provide(context),
         );
+        const version = yield* probeCodexCliVersion({ binaryPath, environment }).pipe(
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+        );
+        return { client, version };
       }),
     });
   }),
@@ -2146,7 +2155,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                     }),
                 ),
               );
-        const client = yield* clientFactory.open({
+        const { client, version: cliVersion } = yield* clientFactory.open({
           instanceId: adapterOptions.instanceId,
           threadId: input.threadId,
           providerSessionId: input.providerSessionId,
@@ -2216,7 +2225,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
 
             const userAgent = yield* client
               .request("initialize", {
-                clientInfo: buildCodexInitializeParams().clientInfo,
+                clientInfo: makeCodexClientInfo(cliVersion),
                 capabilities: CODEX_CLIENT_CAPABILITIES,
               })
               .pipe(

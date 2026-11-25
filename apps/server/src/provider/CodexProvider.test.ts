@@ -23,11 +23,29 @@ function makeFakeCodexAppServers() {
   const helpers: Array<{
     readonly codexHome: unknown;
     readonly crash: Effect.Effect<void>;
+    readonly initializeRequests: Array<unknown>;
     readonly requests: Array<unknown>;
     closed: boolean;
   }> = [];
   const spawner = ChildProcessSpawner.make((command) =>
     Effect.gen(function* () {
+      assert(command._tag === "StandardCommand");
+      if (command.args[0] === "--version") {
+        return ChildProcessSpawner.makeHandle({
+          pid: ChildProcessSpawner.ProcessId(900_000_000),
+          exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(0)),
+          isRunning: Effect.succeed(false),
+          kill: () => Effect.void,
+          unref: Effect.succeed(Effect.void),
+          stdin: Sink.drain,
+          stdout: Stream.make(new TextEncoder().encode("codex-cli 0.172.0\n")),
+          stderr: Stream.empty,
+          all: Stream.empty,
+          getInputFd: () => Sink.drain,
+          getOutputFd: () => Stream.empty,
+        });
+      }
+      assert.strictEqual(command.options.env?.CODEX_INTERNAL_ORIGINATOR_OVERRIDE, "codex-tui");
       const output = yield* Queue.unbounded<Uint8Array, Cause.Done>();
       const exited = yield* Deferred.make<ChildProcessSpawner.ExitCode>();
       const crash = Deferred.succeed(exited, ChildProcessSpawner.ExitCode(1)).pipe(
@@ -35,8 +53,9 @@ function makeFakeCodexAppServers() {
         Effect.asVoid,
       );
       const helper = {
-        codexHome: command._tag === "StandardCommand" ? command.options.env?.CODEX_HOME : undefined,
+        codexHome: command.options.env?.CODEX_HOME,
         crash,
+        initializeRequests: [] as Array<unknown>,
         requests: [] as Array<unknown>,
         closed: false,
       };
@@ -63,6 +82,7 @@ function makeFakeCodexAppServers() {
               };
               if (frame.id === undefined) return Effect.void;
               if (frame.method === "initialize") {
+                helper.initializeRequests.push(frame.params);
                 return respond(frame.id, {
                   codexHome: "/codex-home",
                   platformFamily: "unix",
@@ -117,6 +137,12 @@ it.effect("reuses one Codex skills helper per launch until it idles out", () =>
     assert.deepStrictEqual(yield* read("/alpha"), ["skill-in-/alpha"]);
     assert.deepStrictEqual(yield* read("/beta"), ["skill-in-/beta"]);
     assert.strictEqual(helpers.length, 1);
+    assert.deepStrictEqual(helpers[0]!.initializeRequests, [
+      {
+        clientInfo: { name: "codex-tui", version: "0.172.0" },
+        capabilities: { experimentalApi: true },
+      },
+    ]);
     assert.deepStrictEqual(helpers[0]!.requests, [
       { cwds: ["/alpha"], forceReload: true },
       { cwds: ["/beta"], forceReload: true },

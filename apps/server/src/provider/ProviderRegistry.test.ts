@@ -937,8 +937,11 @@ it.layer(
     it.effect("shows Codex usage that answers after three seconds inside the probe budget", () =>
       Effect.gen(function* () {
         const usageRequested = yield* Deferred.make<void>();
-        const spawner = ChildProcessSpawner.make(() =>
+        const spawner = ChildProcessSpawner.make((command) =>
           Effect.gen(function* () {
+            if (command._tag === "StandardCommand" && command.args[0] === "--version") {
+              return mockHandle({ stdout: "codex-cli 0.167.0\n", stderr: "", code: 0 });
+            }
             const scope = yield* Effect.scope;
             const output = yield* Queue.unbounded<Uint8Array>();
             const send = (message: unknown) =>
