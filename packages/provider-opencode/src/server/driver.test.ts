@@ -89,11 +89,16 @@ const layer = Layer.mergeAll(
   Layer.succeed(OpenCodeRuntime.OpenCodeRuntime, openCode2Runtime),
 ).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 
+const noOpenCodeCredentials = [
+  { name: "OPENCODE_AUTH_CONTENT", sensitive: true, value: "{}" },
+  { name: "OPENCODE_API_KEY", sensitive: true, value: "" },
+] as const;
+
 const create = (config: Partial<OpenCodeSettings>, http: HttpClient.HttpClient, enabled = true) =>
   OpenCodeDriver.create({
     instanceId: ProviderInstanceId.make("opencode-test"),
     displayName: undefined,
-    environment: [],
+    environment: noOpenCodeCredentials,
     enabled,
     config: { ...OpenCodeDriver.defaultConfig(), ...config },
   }).pipe(Effect.provideService(HttpClient.HttpClient, http));
@@ -323,7 +328,7 @@ it.live("discovers models through a home-relative OpenCode wrapper", () =>
     const instance = yield* OpenCodeDriver.create({
       instanceId: ProviderInstanceId.make("opencode-home"),
       displayName: undefined,
-      environment: [],
+      environment: noOpenCodeCredentials,
       enabled: true,
       config: {
         ...OpenCodeDriver.defaultConfig(),
@@ -1700,7 +1705,7 @@ it.layer(layerUpdate)("OpenCodeDriver updates", (it) => {
         const instance = yield* OpenCodeDriver.create({
           instanceId: ProviderInstanceId.make("opencode-update"),
           displayName: undefined,
-          environment: [],
+          environment: noOpenCodeCredentials,
           enabled: true,
           config: { ...OpenCodeDriver.defaultConfig(), binaryPath },
         }).pipe(Effect.provideService(HttpClient.HttpClient, noHttp));
