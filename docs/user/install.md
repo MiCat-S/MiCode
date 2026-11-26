@@ -1,127 +1,73 @@
 # Install MI Code
 
-[MI Code Releases](https://github.com/MiCat-S/MiCode/releases) is the download source for packages published by this fork. Build from source with the [development guide](../operations/00_development.md) when the desired package is unavailable.
+MI Code runs coding agents on your computer (or server) and lets you control them from the desktop app, web app, or mobile app. Install it on the machine where your agents will run first.
+
+[MI Code Releases](https://github.com/MiCat-S/MiCode/releases) is the download source for packages published by this fork. Build from source with the [development guide](../operations/00_development.md) when the package you need is unavailable.
+
+## Requirements
+
+You need at least one installed, authenticated coding agent (provider) before starting a thread. You can launch MI Code first and set up providers from the [Welcome page](./welcome-page.md) or **Settings → Providers**.
 
 ## Desktop app
 
-Build for macOS, Windows, or Linux using the [desktop packaging commands](../operations/00_development.md#desktop-artifacts). Install a new package to update. The built-in updater can be enabled explicitly and uses this repository's GitHub Releases by default.
+Releases include a macOS Apple Silicon package. It is signed with a self-signed certificate and is not notarized by Apple. For Windows or Linux, build a package with the [desktop packaging commands](../operations/00_development.md#desktop-artifacts). Desktop builds check MI Code Releases for updates; see [Updating MI Code](./updating.md).
 
 ## Mobile app
 
-Build for iOS or Android with the [mobile guide](../../apps/mobile/README.md). Use your own signing identity. An Xcode Personal Team can build and install a local iOS client as described in the guide.
+Releases include an Android ARM64 APK and an unsigned iOS IPA, which you must sign with your own Apple certificate and provisioning profile before installing. To build a client yourself, follow the [mobile guide](../../apps/mobile/README.md) with your own signing identity; an Xcode Personal Team can build and install a local iOS client. The mobile app connects to a server on another machine via [remote access](./remote-access.md).
 
 ## Command line
 
-The CLI retains the `t3` command. [MI Code Releases](https://github.com/MiCat-S/MiCode/releases) supplies archives to the [shell installer](../../scripts/install.sh) and [PowerShell installer](../../scripts/install.ps1). Run a local source checkout with `vp run dev`.
+The CLI keeps the `t3` command. The [shell installer](../../scripts/install.sh) and [PowerShell installer](../../scripts/install.ps1) download CLI archives from MI Code Releases when a release includes them. Run a local source checkout with `vp run dev`.
 
 ## Providers
 
-Open **Settings → Providers** in the web or desktop app, select the environment,
-and enable the provider you want. Installation, login, and configuration belong
-to that environment's machine, even when you connect from a phone or another
-computer.
+Open **Settings → Providers** (web or desktop), select the environment, and enable the providers you use. Installation and sign-in always happen on the **environment's machine**.
 
-| Provider            | Install and authenticate                                                                                                                                  |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Codex               | [Connect with ChatGPT](./providers-codex.md#connect-with-chatgpt), or install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`. |
-| Claude              | Install [Claude Code](https://claude.com/product/claude-code), then run `claude auth login`.                                                              |
-| Cursor              | Install [Cursor CLI](https://cursor.com/cli), then run `agent login`.                                                                                     |
-| Grok Build          | Install [Grok Build CLI](https://x.ai/cli), then run `grok login`.                                                                                        |
-| Kiro                | Install [Kiro CLI](https://kiro.dev/docs/cli/), then run `kiro-cli login`.                                                                                |
-| OpenCode            | Install [OpenCode](https://opencode.ai), then run `opencode auth login`.                                                                                  |
-| Antigravity         | Install and sign in with Google from MI Code's provider settings.                                                                                         |
-| Pi                  | Install [Pi](./providers-pi.md#set-up-pi) with Node.js 22.19 or newer, then run `pi` and `/login`.                                                        |
-| Muse Code           | Install [Muse Code](https://dev.meta.ai/docs/muse-code) on the server, run `muse login`, then enable it in Settings → Providers.                          |
-| fx                  | Install [fx](https://fx.sh) with `curl -fsSL https://fx.sh/setup.sh \| bash`, then run `fx login`.                                                        |
-| ACP Registry agents | Add GitHub Copilot and other [ACP agents](./providers-acp.md#add-an-agent) from **Settings → Providers → Add provider → Show more**.                      |
+| Provider         | Install and authenticate                                                                                                 | Guide                                     |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------- |
+| **Codex**        | Connect with ChatGPT in Settings, or install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`. | [Codex](./providers-codex.md)             |
+| **Claude**       | Install [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`.                               | [Claude](./providers-claude.md)           |
+| **Cursor**       | Sign in in Settings or install [Cursor CLI](https://cursor.com/cli) and run `agent login`.                               | [Cursor](./cursor.md)                     |
+| **Grok Build**   | Install [Grok Build CLI](https://x.ai/cli) and run `grok login`.                                                         | [Grok](./providers-grok.md)               |
+| **Antigravity**  | Install managed runtime and sign in with Google in Settings.                                                             | [Antigravity](./providers-antigravity.md) |
+| **OpenCode**     | Install [OpenCode](https://opencode.ai) and run `opencode auth login`.                                                   | [OpenCode](./providers-opencode.md)       |
+| **Kiro**         | Install [Kiro CLI](https://kiro.dev/docs/cli/) and run `kiro-cli login`.                                                 | [Kiro](./providers-kiro.md)               |
+| **Pi**           | Install [Pi](./providers-pi.md) (Node.js 22.19+) and run `pi` → `/login`.                                                | [Pi](./providers-pi.md)                   |
+| **Muse Code**    | Install [Muse Code](https://dev.meta.ai/docs/muse-code) and run `muse login`.                                            | [Muse Code](./providers-muse.md)          |
+| **fx**           | Install [fx](https://fx.sh) and run `fx login`.                                                                          | [fx](./providers-fx.md)                   |
+| **ACP Registry** | Add GitHub Copilot and other agents in **Settings → Providers → Add provider → Show more**.                              | [ACP](./providers-acp.md)                 |
 
-Provider CLIs must be on the server's `PATH`. If MI Code cannot find one, set its
-**Binary path** in provider settings, especially when using a version manager.
-Cursor's executable is `cursor-agent`, although its login command is
-`agent login`. Codex connected through ChatGPT and Antigravity can use their
-managed runtimes without a `PATH` entry.
-
-MI Code warns when a provider version has known compatibility problems with your
-release. Check **Settings → Providers** on that environment for the recommended
-version or range. When its package manager supports installing a specific version,
-you can install the recommendation there. Otherwise use the provider's installer
-on the environment's machine. An unlisted version is unverified.
-
-When a provider CLI is behind its latest release, its provider card shows the
-available version. **Update now** runs the installer that owns the CLI
-(Homebrew, mise, or a global npm, pnpm, Yarn, Bun, Volta, or Vite+ install), or
-the CLI's own update command when MI Code cannot tell. Claude, Codex, and
-OpenCode installs MI Code cannot identify stay manual: update them through the
-installer you used. MI Code runs `mise upgrade`
-only for a tool your mise config requests as `latest` when the provider's binary
-path is a mise shim or under the tool's `installs/<tool>/latest` link; update a
-pinned version, or a path into one version's directory, through mise yourself.
-Update a CLI installed with Nix through Nix.
-Cursor and Antigravity update with MI Code. Homebrew and Chocolatey installs
-compare against the version their package manager offers, which can trail the
-npm release; update Claude installed with Chocolatey through Chocolatey.
-
-The managed runtimes for Antigravity and for Codex connected through ChatGPT
-first install the release MI Code tested. When MI Code finds a newer compatible
-release, their setup in **Settings → Providers** offers an update.
-
-Add another provider instance for a separate account or configuration. Each
-instance can have its own environment variables, such as API keys or a custom
-base URL. Mark secret values as sensitive; after saving, MI Code does not display
-their original values.
-
-For provider-specific setup and accounts, see [Codex](./providers-codex.md),
-[Claude](./providers-claude.md), [OpenCode](./providers-opencode.md),
-[Antigravity](./providers-antigravity.md), [Kiro](./providers-kiro.md),
-[Pi](./providers-pi.md), [Muse Code](./providers-muse.md), [fx](./providers-fx.md), and
-[ACP Registry agents](./providers-acp.md).
+- **Binary path**: If a CLI isn't on the server's `PATH` (common with version managers), set **Binary path** in the provider's settings.
+- **Updates**: Click **Update now** on outdated provider cards (supports Homebrew, mise `latest`, npm/pnpm/Yarn/Bun/Volta/Vite+, or the CLI's own updater; update Nix, Chocolatey, or pinned mise installs manually).
+- **Multiple instances**: Add extra provider instances for separate accounts, API keys, or custom endpoints (mark secret env vars as sensitive).
 
 ### Provider check timeouts
 
-If a provider works in its CLI but MI Code reports a timeout while checking it,
-allow more time in the T3 server's environment. For example, give Codex and
-Claude readiness checks 60 seconds:
+If a working CLI times out during MI Code's readiness check, increase its probe deadline (in milliseconds) in the server's environment (or systemd override / `service.env`) and restart:
 
 ```bash
 T3CODE_CODEX_PROBE_TIMEOUT_MS=60000 T3CODE_CLAUDE_PROBE_TIMEOUT_MS=60000 t3 serve
 ```
 
-For a remote environment, set these on the machine running the T3 server.
-Keep them in your launcher or service configuration to retain them across
-updates, then restart the server. For systemd, add
-`Environment=T3CODE_CODEX_PROBE_TIMEOUT_MS=60000` under `[Service]` in a service
-override, reload systemd, and restart the service. Provider instances can also
-set their own overrides in Settings → Providers.
-
-Each variable extends that provider's readiness-probe deadlines; a phase whose
-default is already longer keeps its default. Providers with several phases can
-take longer than one deadline in total. Values must be whole milliseconds no
-greater than 2147483647; unset or invalid values keep the defaults.
-
-| Provider            | Environment variable                   |
-| ------------------- | -------------------------------------- |
-| Codex               | `T3CODE_CODEX_PROBE_TIMEOUT_MS`        |
-| Claude              | `T3CODE_CLAUDE_PROBE_TIMEOUT_MS`       |
-| Cursor              | `T3CODE_CURSOR_PROBE_TIMEOUT_MS`       |
-| Antigravity         | `T3CODE_ANTIGRAVITY_PROBE_TIMEOUT_MS`  |
-| Grok                | `T3CODE_GROK_PROBE_TIMEOUT_MS`         |
-| Kiro                | `T3CODE_KIRO_PROBE_TIMEOUT_MS`         |
-| fx                  | `T3CODE_FX_PROBE_TIMEOUT_MS`           |
-| Pi                  | `T3CODE_PI_PROBE_TIMEOUT_MS`           |
-| Muse Code           | `T3CODE_MUSE_PROBE_TIMEOUT_MS`         |
-| OpenCode            | `T3CODE_OPENCODE_PROBE_TIMEOUT_MS`     |
-| ACP Registry agents | `T3CODE_ACP_REGISTRY_PROBE_TIMEOUT_MS` |
-
-Longer deadlines also take longer to report a stalled check. These overrides
-cover readiness and discovery, including OpenCode server startup. Usage and
-config enrichment retain their own shorter limits. Turn execution, package
-installation, update checks, and shutdown limits keep their existing behavior.
+| Provider     | Environment variable                   |
+| ------------ | -------------------------------------- |
+| Codex        | `T3CODE_CODEX_PROBE_TIMEOUT_MS`        |
+| Claude       | `T3CODE_CLAUDE_PROBE_TIMEOUT_MS`       |
+| Cursor       | `T3CODE_CURSOR_PROBE_TIMEOUT_MS`       |
+| Antigravity  | `T3CODE_ANTIGRAVITY_PROBE_TIMEOUT_MS`  |
+| Grok         | `T3CODE_GROK_PROBE_TIMEOUT_MS`         |
+| Kiro         | `T3CODE_KIRO_PROBE_TIMEOUT_MS`         |
+| fx           | `T3CODE_FX_PROBE_TIMEOUT_MS`           |
+| Pi           | `T3CODE_PI_PROBE_TIMEOUT_MS`           |
+| Muse Code    | `T3CODE_MUSE_PROBE_TIMEOUT_MS`         |
+| OpenCode     | `T3CODE_OPENCODE_PROBE_TIMEOUT_MS`     |
+| ACP Registry | `T3CODE_ACP_REGISTRY_PROBE_TIMEOUT_MS` |
 
 ## Next steps
 
+- [User guide index](./README.md): overview of how MI Code works.
 - [Working with threads](./thread-sidebar.md): start tasks and organize parallel work.
-- [Permission modes](./permission-modes.md): choose when agents ask before acting.
+- [Permission modes](./permission-modes.md): control when agents ask before acting.
 - [Remote access](./remote-access.md): connect from another device.
-- [Running in the background](./background-service.md): keep a host available.
-- [Updating MI Code](./updating.md): update the app and connected servers.
-- [Managed policy](./managed-policy.md): configure MI Code for everyone on a machine.
+- [Updating MI Code](./updating.md): keep apps, servers, and providers up to date.

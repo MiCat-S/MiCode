@@ -8,10 +8,12 @@ import type * as EffectAcpSchema from "effect-acp/compat";
 import * as NodePath from "node:path";
 
 import {
+  acpChangedPathsOfToolCall,
   acpClientExecuteDisposition,
   acpMcpToolApprovalElicitationDisposition,
   acpPermissionDisposition,
   makeAcpClientPolicyGrants,
+  mergeAcpChangedPaths,
   type AcpRuntimePolicy,
 } from "./clientPolicy.ts";
 
@@ -99,26 +101,158 @@ describe("acpPermissionDisposition", () => {
     assert.equal(acpPermissionDisposition(policy, permissionRequest("execute")), "deny");
   });
 
-  it("asks even for file edits explicitly escalated by an auto-accept-edits agent", () => {
-    const autoAcceptEdits: AcpRuntimePolicy = { runtimeMode: "auto-accept-edits", cwd };
-    for (const kind of ["edit", "delete", "move", "execute", "fetch", "other", "read"] as const) {
-      assert.equal(acpPermissionDisposition(autoAcceptEdits, permissionRequest(kind)), "ask");
-    }
+  it("keeps explicit permission requests automatic in Full access", () => {
     assert.equal(
-      acpPermissionDisposition(
-        { ...autoAcceptEdits, approvalPolicy: "on-request" },
-        permissionRequest("edit"),
-      ),
-      "ask",
+      acpPermissionDisposition({ runtimeMode: "full-access", cwd }, permissionRequest("edit")),
+      "allow",
     );
   });
 
-  it("asks for explicit read or write escalations under Auto and on-request approval", () => {
+  it.effect("checks a file change's path exactly as the agent sent it", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const workspace = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-acp-permission-workspace-",
+      });
+      const outside = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-acp-permission-outside-",
+      });
+      // Two different files on POSIX: `target` stays in the folder, `target ` leads out of it.
+      yield* fileSystem.writeFileString(path.join(workspace, "target"), "");
+      yield* fileSystem.symlink(path.join(outside, "file"), path.join(workspace, "target "));
+      yield* fileSystem.symlink(outside, path.join(workspace, " linked"));
+      yield* fileSystem.makeDirectory(path.join(workspace, "linked"));
+      const disposition = (target: string) =>
+        acpPermissionDisposition(
+          { ...policy, cwd: workspace },
+          permissionRequest("edit", [{ path: target }]),
+        );
+      assert.equal(disposition(path.join(workspace, "target")), "allow");
+      assert.equal(disposition("target"), "allow");
+      assert.equal(disposition("linked/new.ts"), "allow");
+      if (NodePath.sep === "/") {
+        assert.equal(disposition(path.join(workspace, "target ")), "deny");
+        assert.equal(disposition("target "), "deny");
+        assert.equal(disposition(" linked/new.ts"), "deny");
+      }
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it("denies a workspace write whose path may mean another file to the agent", () => {
+    const edit = (path: unknown) =>
+      acpPermissionDisposition(
+        policy,
+        permissionRequest("edit", [{ path }] as ReadonlyArray<EffectAcpSchema.ToolCallLocation>),
+      );
+    assert.equal(edit("src/a.ts"), "allow");
+    assert.equal(edit("./src/../src/a.ts"), "allow");
+    for (const path of [
+      "",
+      " ",
+      "\n",
+      7,
+      null,
+      undefined,
+      ["src/a.ts"],
+      "~",
+      "~/notes.txt",
+      "~other/notes.txt",
+      `file://${cwd}/src/a.ts`,
+      "file:src/a.ts",
+      "vscode-remote://host/src/a.ts",
+      "src/a.ts\0",
+      `${cwd}/src/a.ts\0.png`,
+      "src/../../up.ts",
+      `${cwd}/../up.ts`,
+    ]) {
+      assert.equal(edit(path), "deny", JSON.stringify(path));
+    }
+    if (NodePath.sep === "/") {
+      for (const path of ["C:\\work\\a.ts", "C:a.ts", "\\\\host\\share\\a.ts", "src\\..\\a.ts"]) {
+        assert.equal(edit(path), "deny", path);
+      }
+    }
+  });
+
+  it("reads a request's diffs and raw input as well as its locations", () => {
+    const outside = NodePath.resolve(process.cwd(), "outside-acp-permission-workspace", "file.ts");
+    const edit = (toolCall: Record<string, unknown>) =>
+      acpPermissionDisposition(policy, {
+        options: [],
+        sessionId: "permission-session",
+        toolCall: { kind: "edit", toolCallId: "permission-tool-call", ...toolCall },
+      } as EffectAcpSchema.RequestPermissionRequest);
+    const inside = [{ path: "src/a.ts" }];
+    assert.equal(edit({ locations: inside, rawInput: { path: "src/a.ts" } }), "allow");
+    assert.equal(edit({ content: [{ type: "diff", path: "src/a.ts", newText: "" }] }), "allow");
+    assert.equal(edit({ rawInput: { file_path: "src/a.ts", command: "write" } }), "allow");
+    for (const toolCall of [
+      { locations: inside, content: [{ type: "diff", path: outside, newText: "" }] },
+      { locations: inside, rawInput: { path: outside } },
+      // The same key under another spelling still counts.
+      { locations: inside, rawInput: { path: "src/a.ts", filePath: outside } },
+      { locations: inside, rawInput: { path: "src/a.ts", file_path: outside } },
+      { locations: inside, rawInput: { path: 7 } },
+      { locations: inside, rawInput: { path: " " } },
+      { locations: inside, content: [{ type: "diff", newText: "" }] },
+      { locations: inside, content: [{ type: "diff", changes: {} }] },
+      { locations: inside, content: [{ type: "_t3_unknown", originalType: "_patch", raw: {} }] },
+      { locations: inside, content: "diff" },
+      { locations: { path: "src/a.ts" } },
+      // A diff that carries a path beside its changes changes both.
+      {
+        content: [
+          { type: "diff", path: outside, changes: [{ operation: "modify", path: "src/a.ts" }] },
+        ],
+      },
+      { content: [{ type: "diff", changes: [{ operation: "_swap", path: "src/a.ts" }] }] },
+      {
+        content: [
+          { type: "diff", changes: [{ operation: "move", oldPath: outside, path: "src/a.ts" }] },
+        ],
+      },
+      { content: [{ type: "diff", changes: [{ operation: "move", path: "src/a.ts" }] }] },
+      // No path at all.
+      {},
+      { locations: [] },
+      { rawInput: "src/a.ts" },
+    ]) {
+      assert.equal(edit(toolCall), "deny", JSON.stringify(toolCall));
+    }
+  });
+
+  it("does not approve a file change that names very many paths", () => {
+    const edit = (count: number) =>
+      acpPermissionDisposition(
+        policy,
+        permissionRequest(
+          "edit",
+          Array.from({ length: count }, (_, index) => ({ path: `src/${index}.ts` })),
+        ),
+      );
+    assert.equal(edit(256), "allow");
+    assert.equal(edit(257), "deny");
+    // The same path named again is one path.
+    assert.equal(
+      acpPermissionDisposition(
+        policy,
+        permissionRequest(
+          "edit",
+          Array.from({ length: 1_000 }, () => ({ path: "src/a.ts" })),
+        ),
+      ),
+      "allow",
+    );
+  });
+
+  it("asks for explicit read or write escalations in supervised modes", () => {
     for (const runtimePolicy of [
       { ...policy, approvalPolicy: "on-request" },
       { ...policy, approvalPolicy: "on-request", sandboxPolicy: { type: "readOnly" } },
       { runtimeMode: "approval-required", cwd },
       { runtimeMode: "auto", cwd },
+      { runtimeMode: "auto-accept-edits", cwd },
     ] satisfies ReadonlyArray<AcpRuntimePolicy>) {
       for (const kind of [
         "read",
@@ -131,7 +265,10 @@ describe("acpPermissionDisposition", () => {
         "fetch",
         "other",
       ] as const) {
-        assert.equal(acpPermissionDisposition(runtimePolicy, permissionRequest(kind)), "ask");
+        assert.equal(
+          acpPermissionDisposition(runtimePolicy, permissionRequest(kind, [{ path: "src/a.ts" }])),
+          "ask",
+        );
       }
     }
   });
@@ -231,6 +368,59 @@ describe("acpPermissionDisposition", () => {
       );
     }).pipe(Effect.provide(NodeServices.layer)),
   );
+});
+
+describe("acpChangedPathsOfToolCall", () => {
+  it("names every path of the locations, diffs and raw input once, as sent", () => {
+    assert.deepEqual(
+      acpChangedPathsOfToolCall({
+        locations: [{ path: "/work/a.ts", line: 3 }, { path: " /work/a.ts" }],
+        content: [
+          { type: "content", content: { type: "text", text: "/elsewhere/ignored.ts" } },
+          { type: "terminal", terminalId: "terminal-1" },
+          { type: "diff", path: "/work/b.ts ", newText: "b" },
+          {
+            type: "diff",
+            changes: [
+              { operation: "add", path: "/work/c.ts" },
+              { operation: "delete", path: "/work/d.ts" },
+              { operation: "modify", path: "/work/a.ts" },
+              { operation: "move", oldPath: "/work/e.ts", path: "/work/f.ts" },
+              // A copy only reads its source.
+              { operation: "copy", oldPath: "/elsewhere/g.ts", path: "/work/g.ts" },
+            ],
+          },
+        ],
+        rawInput: { path: "/work/a.ts", filePath: "/work/h.ts", file_path: null, other: 7 },
+      }),
+      [
+        "/work/a.ts",
+        " /work/a.ts",
+        "/work/b.ts ",
+        "/work/c.ts",
+        "/work/d.ts",
+        "/work/e.ts",
+        "/work/f.ts",
+        "/work/g.ts",
+        "/work/h.ts",
+      ],
+    );
+    assert.deepEqual(acpChangedPathsOfToolCall({}), []);
+    assert.deepEqual(
+      acpChangedPathsOfToolCall({ locations: null, content: null, rawInput: null }),
+      [],
+    );
+  });
+
+  it("merges two readings into every path of both, and unknown stays unknown", () => {
+    assert.deepEqual(mergeAcpChangedPaths(["/a", "/b"], ["/b", "/c"]), ["/a", "/b", "/c"]);
+    assert.deepEqual(mergeAcpChangedPaths(undefined, ["/a"]), ["/a"]);
+    assert.deepEqual(mergeAcpChangedPaths(["/a"], undefined), ["/a"]);
+    assert.deepEqual(mergeAcpChangedPaths(undefined, undefined), []);
+    assert.equal(mergeAcpChangedPaths("unknown", ["/a"]), "unknown");
+    assert.equal(mergeAcpChangedPaths(["/a"], "unknown"), "unknown");
+    assert.equal(mergeAcpChangedPaths("unknown", undefined), "unknown");
+  });
 });
 
 describe("acpMcpToolApprovalElicitationDisposition", () => {

@@ -7553,6 +7553,393 @@ describe("AcpAdapterV2", () => {
     }).pipe(Effect.provide(layerTest)),
   );
 
+  const startEditPermissionTurn = Effect.fn(function* (
+    name: string,
+    runtimeMode: "full-access" | "auto-accept-edits" = "full-access",
+    agentEnvironment?: (folders: {
+      readonly workspace: string;
+      readonly elsewhere: string;
+    }) => Readonly<Record<string, string>>,
+  ) {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const workspace = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-acp-edit-cwd-" });
+    const elsewhere = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-acp-edit-out-" });
+    type RuntimeService = AcpSessionRuntime.AcpSessionRuntime["Service"];
+    let requestPermission: Parameters<RuntimeService["handleRequestPermission"]>[0] | undefined;
+    let sessionUpdate: Parameters<RuntimeService["handleSessionUpdate"]>[0] | undefined;
+    let runtimeInput: AcpAdapterV2RuntimeInput | undefined;
+    const makeRuntime = makeMockRuntime({
+      childProcessSpawner: yield* ChildProcessSpawner.ChildProcessSpawner,
+      mockAgentPath: yield* bundledMockAgentPath,
+      environment: {
+        T3_ACP_HANG_PROMPT_FOREVER: "1",
+        ...agentEnvironment?.({ workspace, elsewhere }),
+      },
+      wrapRuntime: (runtime) => ({
+        ...runtime,
+        handleRequestPermission: (handler) =>
+          Effect.sync(() => {
+            requestPermission = handler;
+          }).pipe(Effect.andThen(runtime.handleRequestPermission(handler))),
+        handleSessionUpdate: (handler) =>
+          Effect.sync(() => {
+            sessionUpdate = handler;
+          }).pipe(Effect.andThen(runtime.handleSessionUpdate(handler))),
+      }),
+    });
+    const instanceId = ProviderInstanceId.make(`acp-test-${name}`);
+    const adapter = yield* makeAcpAdapterV2({
+      instanceId,
+      flavor: {
+        driver: ACP_TEST_DRIVER,
+        capabilities: AcpProviderCapabilitiesV2,
+        interruptPromptOnCancel: true,
+        makeRuntime: (input) =>
+          Effect.sync(() => {
+            runtimeInput = input;
+          }).pipe(Effect.andThen(makeRuntime(input))),
+      },
+      selfInvocation: yield* resolveSelfInvocation(),
+      clientTerminals: {},
+    });
+    const threadId = ThreadId.make(`thread-acp-${name}`);
+    const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+      runtimeMode,
+      interactionMode: "default",
+      cwd: workspace,
+      ...(runtimeMode === "full-access"
+        ? {
+            approvalPolicy: "never",
+            sandboxPolicy: { type: "workspaceWrite", writableRoots: [] },
+          }
+        : {}),
+    });
+    const modelSelection = { instanceId, model: "default" } as const;
+    const runtime = yield* adapter.openSession({
+      threadId,
+      providerSessionId: ProviderSessionId.make(`provider-session-acp-${name}`),
+      modelSelection,
+      runtimePolicy,
+    });
+    const providerThread = yield* runtime.ensureThread({
+      threadId,
+      modelSelection,
+      runtimePolicy,
+    });
+    const turnFiber = yield* runtime
+      .startTurn(
+        makeTurnInput({
+          threadId,
+          providerThread,
+          instanceId,
+          runtimePolicy,
+          now: yield* DateTime.now,
+        }),
+      )
+      .pipe(Effect.forkScoped);
+    const acknowledge = runtimeInput?.onOutgoingResponse;
+    if (
+      requestPermission === undefined ||
+      sessionUpdate === undefined ||
+      acknowledge === undefined
+    ) {
+      return yield* Effect.die("ACP runtime must register its handlers");
+    }
+    const handleRequestPermission = requestPermission;
+    const options = [
+      { optionId: "allow-once", name: "Allow once", kind: "allow_once" },
+      { optionId: "reject-once", name: "Reject", kind: "reject_once" },
+    ] as const;
+    /** Sends an edit permission request and returns the fiber waiting on its answer. */
+    const requestEdit = (
+      toolCallId: string,
+      request: { readonly sessionId?: string; readonly target?: string } = {},
+    ) =>
+      handleRequestPermission(
+        {
+          sessionId: request.sessionId ?? "mock-session-1",
+          toolCall: {
+            toolCallId,
+            title: "Edit file",
+            kind: "edit",
+            ...(request.target === undefined ? {} : { locations: [{ path: request.target }] }),
+          },
+          options,
+        },
+        { requestId: `${toolCallId}-request`, method: "session/request_permission" },
+      ).pipe(Effect.forkScoped);
+    const editOutcome = (toolCallId: string, request?: Parameters<typeof requestEdit>[1]) =>
+      requestEdit(toolCallId, request).pipe(
+        Effect.flatMap(Fiber.join),
+        Effect.tap(() => acknowledge(`${toolCallId}-request`)),
+        Effect.map((response) => response.outcome),
+      );
+    /** Declines the approval the adapter raised and ends the turn. */
+    const declinePendingAndStop = Effect.fn(function* (
+      requestId: string,
+      fiber: Effect.Success<ReturnType<typeof requestEdit>>,
+    ) {
+      const pending = Option.getOrThrow(
+        yield* runtime.events.pipe(
+          Stream.filter(
+            (event) =>
+              event.type === "runtime_request.updated" && event.runtimeRequest.status === "pending",
+          ),
+          Stream.runHead,
+        ),
+      );
+      if (
+        pending.type !== "runtime_request.updated" ||
+        pending.runtimeRequest.providerTurnId === null
+      ) {
+        return yield* Effect.die("Expected an ACP approval request");
+      }
+      const responseFiber = yield* runtime
+        .respondToRuntimeRequest({ requestId: pending.runtimeRequest.id, decision: "decline" })
+        .pipe(Effect.forkScoped);
+      const response = yield* Fiber.join(fiber);
+      yield* acknowledge(requestId);
+      yield* Fiber.join(responseFiber);
+      assert.deepEqual(response.outcome, { outcome: "selected", optionId: "reject-once" });
+      yield* runtime.interruptTurn({
+        providerThread,
+        providerTurnId: pending.runtimeRequest.providerTurnId,
+      });
+      yield* Fiber.join(turnFiber);
+    });
+    return {
+      path,
+      workspace,
+      elsewhere,
+      sessionUpdate,
+      requestEdit,
+      editOutcome,
+      declinePendingAndStop,
+      runtime,
+      providerThread,
+      turnFiber,
+    };
+  });
+
+  it.effect("asks about an edit the agent escalates inside an Auto-accept edits workspace", () =>
+    Effect.gen(function* () {
+      const turn = yield* startEditPermissionTurn("edit-folder", "auto-accept-edits");
+      const inside = yield* turn.requestEdit("edit-inside", {
+        target: turn.path.join(turn.workspace, "src", "a.ts"),
+      });
+      yield* turn.declinePendingAndStop("edit-inside-request", inside);
+    }).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect(
+    "denies a workspace edit without a path from a session that did not start its tool call",
+    () =>
+      Effect.gen(function* () {
+        const turn = yield* startEditPermissionTurn("edit-other-session");
+        // The first request waits for the turn, so the tool call below lands in it.
+        const first = yield* turn.editOutcome("edit-first", {
+          target: turn.path.join(turn.workspace, "src", "a.ts"),
+        });
+        assert.deepEqual(first, { outcome: "selected", optionId: "allow-once" });
+        yield* turn.sessionUpdate({
+          sessionId: "mock-session-1",
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId: "edit-shared",
+            title: "Edit file",
+            kind: "edit",
+            status: "pending",
+            locations: [{ path: turn.path.join(turn.workspace, "src", "b.ts") }],
+          },
+        });
+
+        // The session that started the tool call may name it by id alone.
+        const own = yield* turn.editOutcome("edit-shared");
+        assert.deepEqual(own, { outcome: "selected", optionId: "allow-once" });
+
+        const other = yield* turn.editOutcome("edit-shared", { sessionId: "mock-session-2" });
+        assert.deepEqual(other, { outcome: "selected", optionId: "reject-once" });
+      }).pipe(Effect.provide(layerTest)),
+  );
+
+  const expectEditNamedByIdRejected = (
+    name: string,
+    updates: (turn: {
+      readonly inside: string;
+      readonly outside: string;
+    }) => ReadonlyArray<Record<string, unknown>>,
+  ) =>
+    Effect.gen(function* () {
+      const turn = yield* startEditPermissionTurn(name);
+      const inside = turn.path.join(turn.workspace, "src", "a.ts");
+      // The first request waits for the turn, so the tool call below lands in it.
+      const first = yield* turn.editOutcome("edit-first", { target: inside });
+      assert.deepEqual(first, { outcome: "selected", optionId: "allow-once" });
+      for (const update of updates({ inside, outside: turn.path.join(turn.elsewhere, "b.ts") })) {
+        yield* turn.sessionUpdate({
+          sessionId: "mock-session-1",
+          update: { toolCallId: "edit-tracked", ...update },
+        } as EffectAcpSchema.SessionNotification);
+      }
+      const outcome = yield* turn.editOutcome("edit-tracked");
+      assert.deepEqual(outcome, { outcome: "selected", optionId: "reject-once" });
+    }).pipe(Effect.provide(layerTest));
+
+  it.effect(
+    "denies a workspace edit named by id whose tool call named another folder before an update",
+    () =>
+      expectEditNamedByIdRejected("edit-replaced-path", ({ inside, outside }) => [
+        {
+          sessionUpdate: "tool_call",
+          title: "Edit file",
+          kind: "edit",
+          status: "pending",
+          locations: [{ path: outside }],
+        },
+        { sessionUpdate: "tool_call_update", locations: [{ path: inside }] },
+      ]),
+  );
+
+  it.effect("denies a workspace edit named by id whose tool call left one location blank", () =>
+    expectEditNamedByIdRejected("edit-blank-path", ({ inside }) => [
+      {
+        sessionUpdate: "tool_call",
+        title: "Edit file",
+        kind: "edit",
+        status: "pending",
+        locations: [{ path: inside }, { path: " " }],
+      },
+    ]),
+  );
+
+  it.effect("denies a workspace edit named by id whose content chunk changes another folder", () =>
+    expectEditNamedByIdRejected("edit-chunk-path", ({ inside, outside }) => [
+      {
+        sessionUpdate: "tool_call",
+        title: "Edit file",
+        kind: "edit",
+        status: "pending",
+        locations: [{ path: inside }],
+      },
+      {
+        sessionUpdate: "tool_call_content_chunk",
+        content: { type: "diff", changes: [{ operation: "modify", path: outside }] },
+      },
+    ]),
+  );
+
+  const expectAgentEditAnswer = Effect.fn(function* (
+    turn: Effect.Success<ReturnType<typeof startEditPermissionTurn>>,
+    optionId: "allow-once" | "reject-once",
+  ) {
+    const answerOrRequest = Option.getOrThrow(
+      yield* turn.runtime.events.pipe(
+        Stream.filter(
+          (event) =>
+            (event.type === "runtime_request.updated" &&
+              event.runtimeRequest.status === "pending") ||
+            (event.type === "turn_item.updated" &&
+              event.turnItem.nativeItemRef?.nativeId?.includes("edit-answered:") === true),
+        ),
+        Stream.runHead,
+      ),
+    );
+    if (
+      answerOrRequest.type !== "turn_item.updated" ||
+      answerOrRequest.turnItem.providerTurnId === null
+    ) {
+      return assert.fail("The workspace edit became an approval request");
+    }
+    assert.include(answerOrRequest.turnItem.nativeItemRef?.nativeId, `edit-answered:${optionId}`);
+    yield* turn.runtime.interruptTurn({
+      providerThread: turn.providerThread,
+      providerTurnId: answerOrRequest.turnItem.providerTurnId,
+    });
+    yield* Fiber.join(turn.turnFiber);
+  });
+
+  it.effect("allows an in-root workspace edit named by id when all agent updates were read", () =>
+    Effect.gen(function* () {
+      const turn = yield* startEditPermissionTurn(
+        "edit-read-updates",
+        "full-access",
+        ({ workspace }) => ({
+          T3_ACP_EMIT_EDIT_UPDATES_THEN_REQUEST: JSON.stringify([
+            {
+              sessionUpdate: "tool_call_update",
+              toolCallId: "edit-tracked",
+              title: "Edit file",
+              kind: "edit",
+              status: "pending",
+              locations: [{ path: `${workspace}/src/a.ts` }],
+            },
+            {
+              sessionUpdate: "tool_call_update",
+              toolCallId: "edit-tracked",
+              locations: [{ path: `${workspace}/src/a.ts`, line: 3 }],
+            },
+          ]),
+        }),
+      );
+      yield* expectAgentEditAnswer(turn, "allow-once");
+    }).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect.each([
+    {
+      update: "one location is not a path",
+      later: (inside: string) => ({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "edit-tracked",
+        locations: [{ path: inside }, { path: 7 }],
+      }),
+    },
+    {
+      update: "a line number is not a whole number",
+      later: (inside: string) => ({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "edit-tracked",
+        locations: [{ path: inside, line: -1 }],
+      }),
+    },
+    {
+      update: "tool call id cannot be read",
+      later: (inside: string) => ({
+        sessionUpdate: "tool_call_update",
+        toolCallId: 7,
+        locations: [{ path: inside }],
+      }),
+    },
+  ])(
+    "denies a workspace edit named by id after an agent update could not be read: $update",
+    ({ later }) =>
+      Effect.gen(function* () {
+        // The agent process writes these to its output, so they pass through protocol decoding.
+        const turn = yield* startEditPermissionTurn(
+          "edit-unread-update",
+          "full-access",
+          ({ workspace }) => {
+            const inside = `${workspace}/src/a.ts`;
+            return {
+              T3_ACP_EMIT_EDIT_UPDATES_THEN_REQUEST: JSON.stringify([
+                {
+                  sessionUpdate: "tool_call_update",
+                  toolCallId: "edit-tracked",
+                  title: "Edit file",
+                  kind: "edit",
+                  status: "pending",
+                  locations: [{ path: inside }],
+                },
+                later(inside),
+              ]),
+            };
+          },
+        );
+        yield* expectAgentEditAnswer(turn, "reject-once");
+      }).pipe(Effect.provide(layerTest)),
+  );
+
   it.effect("replaces the ACP session and clears conversation state on rollback", () =>
     Effect.gen(function* () {
       const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
@@ -13102,6 +13489,7 @@ describe("AcpAdapterV2", () => {
         const sessionId = providerThread.nativeThreadRef?.nativeId;
         if (sessionId == null) return assert.fail("expected native session id");
         let ordinal = 0;
+        const noteSetAt = "2026-11-23T14:02:17.000Z";
         const runTurn = (input: {
           readonly text: string;
           readonly note: string;
@@ -13122,7 +13510,7 @@ describe("AcpAdapterV2", () => {
                 ordinal,
                 messageText: input.text,
               }),
-              appContext: [{ key: "mcp_app_item-1", text: input.note }],
+              appContext: [{ key: "mcp_app_item-1", text: input.note, updatedAt: noteSetAt }],
             });
             const events = Array.from(
               yield* runtime.events.pipe(
@@ -13137,7 +13525,9 @@ describe("AcpAdapterV2", () => {
             };
           });
 
-        const tag = (note: string) => `<external_mcp_app_item-1>${note}</external_mcp_app_item-1>`;
+        // Every send, a resend included, says when the app set the note.
+        const tag = (note: string) =>
+          `<external_mcp_app_item-1 updated_at="${noteSetAt}">${note}</external_mcp_app_item-1>`;
 
         // An unsuccessful stop reason must not mark appContext delivered.
         const refusedTurn = yield* runTurn({
@@ -13168,7 +13558,9 @@ describe("AcpAdapterV2", () => {
             ordinal: interruptedOrdinal,
             messageText: "Interrupted attempt",
           }),
-          appContext: [{ key: "mcp_app_item-1", text: "Created Jira issue PROJ-42" }],
+          appContext: [
+            { key: "mcp_app_item-1", text: "Created Jira issue PROJ-42", updatedAt: noteSetAt },
+          ],
         });
         yield* Deferred.await(interruptedStarted);
         assert.include(prompts.at(-1) ?? "", tag("Created Jira issue PROJ-42"));
@@ -13268,7 +13660,9 @@ describe("AcpAdapterV2", () => {
             ordinal: restartOrdinal,
             messageText: "Trigger restart",
           }),
-          appContext: [{ key: "mcp_app_item-1", text: "Updated Jira issue PROJ-43" }],
+          appContext: [
+            { key: "mcp_app_item-1", text: "Updated Jira issue PROJ-43", updatedAt: noteSetAt },
+          ],
         });
         yield* Deferred.await(restartStarted);
         const restartInterruptFiber = yield* runtime
