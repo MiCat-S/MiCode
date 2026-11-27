@@ -8,7 +8,9 @@ Import cookies from another browser into the desktop app's [preview browser](./b
 2. Open **Settings → Browser → Browser profiles → Add profile** and choose a browser under **Import from**.
 3. Allow any OS keyring unlock prompt.
 
-This is a one-time copy—later login changes stay separate, and some sites may still require signing in again.
+This is a one-time copy. Later login changes stay separate, and some sites may still require signing in again.
+
+Agent tabs open in Incognito by default. If you approve an agent's request to open an imported profile, it can use the active logins in that profile. If the browser panel offers **Release control**, you can use it to hand the agent a saved-profile tab you opened in the thread. Choose **Take control** to end that handoff.
 
 ## Platform notes
 

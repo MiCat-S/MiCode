@@ -1485,7 +1485,7 @@ const layerPreviewStandardToolkitRegistration = toolkitRegistration(
 );
 
 const layerPreviewSnapshotRegistration = imageToolRegistration(
-  registerPreviewSnapshot(),
+  withClientInput(registerPreviewSnapshot()),
   PreviewHandlers.layerSnapshot,
 );
 

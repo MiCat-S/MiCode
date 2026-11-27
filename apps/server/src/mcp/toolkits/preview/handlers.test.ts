@@ -19,6 +19,7 @@ import {
   createPendingAttachmentId,
   parseThreadSegmentFromAttachmentId,
 } from "../../../attachmentStore.ts";
+import * as ProjectService from "../../../project/ProjectService.ts";
 import * as ServerConfig from "../../../config.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
@@ -95,9 +96,11 @@ it.effect("preview_open navigates the opened tab to a dev server in one tool cal
       issuedAt: 1,
     }),
     Effect.provide(
-      Layer.mergeAll(PreviewAutomationBroker.layer, liveThreadsLayer).pipe(
-        Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
-      ),
+      Layer.mergeAll(
+        PreviewAutomationBroker.layer,
+        liveThreadsLayer,
+        Layer.mock(ProjectService.ProjectService)({}),
+      ).pipe(Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
     ),
   ),
 );

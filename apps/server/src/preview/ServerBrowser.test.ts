@@ -3834,7 +3834,7 @@ it.effect("a session's own tab stays its default while other sessions' tabs are 
 );
 
 it.effect(
-  "preview_open picks a reported profile by id or name and defaults to the reported one",
+  "preview_open defaults to Incognito instead of the reported default and accepts a profile by name or id",
   () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -3863,11 +3863,11 @@ it.effect(
         const { sessions } = yield* manager.list({ threadId: scope.thread.threadId });
         const profileOf = (tabId: string | null) =>
           sessions.find((session) => session.tabId === tabId)?.profileId;
-        expect(profileOf(byDefault.tabId)).toBe("profile-work");
+        expect(profileOf(byDefault.tabId)).toBe("incognito");
         expect(profileOf(byName.tabId)).toBe("profile-work");
         expect(profileOf(byId.tabId)).toBe("incognito");
         expect(contextRequests).toEqual([
-          { profileId: "profile-work", isolated: false },
+          { profileId: "incognito", isolated: true },
           { profileId: "profile-work", isolated: false },
           { profileId: "incognito", isolated: true },
         ]);
@@ -4545,7 +4545,7 @@ it.effect("reports a desktop tab's load failure from before the server connected
       desktopRendersNext = true;
       const opened = yield* manager.open({ threadId: scope.thread.threadId, runtime: "server" });
       desktopLoadFailures.set(opened.tabId, certificateError);
-      yield* browser.attachViewer(viewerInput(opened.tabId, false));
+      const viewer = yield* browser.attachViewer(viewerInput(opened.tabId, true));
       const page = desktopConnections[0]!.context.page;
       page.url = () => "chrome-error://chromewebdata/";
       const status = () =>
@@ -4566,6 +4566,11 @@ it.effect("reports a desktop tab's load failure from before the server connected
         url: certificateError.url,
         loadError: certificateError,
       });
+      expect(yield* snapshot().pipe(Effect.flip)).toMatchObject({
+        _tag: "PreviewAutomationExecutionError",
+        reason: expect.stringContaining("approve opening a tab in this profile"),
+      });
+      yield* viewer.input({ type: "releaseControl" });
       expect(yield* snapshot()).toMatchObject({
         url: certificateError.url,
         loadError: certificateError,

@@ -3,6 +3,11 @@ import * as Preview from "../../../preview/Manager.ts";
 import { requireThreadMcpCapability } from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import { unavailable } from "../../threadAccess.ts";
+import {
+  displayBrowserUrl,
+  needsBrowserApproval,
+  requestBrowserApproval,
+} from "../preview/approval.ts";
 import { PreviewControlsToolkit } from "./tools.ts";
 import * as PreviewAutomationBroker from "../../PreviewAutomationBroker.ts";
 
@@ -24,13 +29,19 @@ export const layer = McpToolAccess.toLayer(PreviewControlsToolkit, {
       };
     }),
   ),
-  t3_preview_close: McpToolAccess.actsAsCaller((input) =>
+  t3_preview_close: McpToolAccess.actsAsCaller((input, caller) =>
     Effect.gen(function* () {
       const { scope, manager } = yield* access;
       const { sessions } = yield* manager.list({ threadId: scope.thread.threadId });
-      if (
-        sessions.some((session) => session.tabId === input.tabId && session.runtime === "server")
-      ) {
+      const tab = sessions.find((session) => session.tabId === input.tabId);
+      if (needsBrowserApproval(caller)) {
+        const raw = tab?.navStatus._tag === "Idle" ? undefined : tab?.navStatus.url;
+        yield* requestBrowserApproval(
+          { operation: "close", input, url: raw },
+          `Allow the agent to close ${displayBrowserUrl(raw)}?`,
+        );
+      }
+      if (tab?.runtime === "server") {
         const broker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
         yield* broker.invoke({ scope, operation: "close", input: {}, tabId: input.tabId });
         return {};

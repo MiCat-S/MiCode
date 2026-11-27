@@ -21,6 +21,7 @@ import {
   type PreviewAutomationSnapshotMetadata,
   type PreviewAutomationStatus,
   type PreviewTabId,
+  INCOGNITO_BROWSER_PROFILE_ID,
 } from "@t3tools/contracts";
 
 import {
@@ -31,9 +32,12 @@ import {
 } from "../../../attachmentStore.ts";
 import { resolveAttachmentRelativePath } from "../../../attachmentPaths.ts";
 import * as ServerConfig from "../../../config.ts";
+import * as BrowserUploadPaths from "../../../preview/BrowserUploadPaths.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as PreviewAutomationBroker from "../../PreviewAutomationBroker.ts";
+import { assertLiveCaller, loadCaller, type Caller } from "../../threadAccess.ts";
+import { displayBrowserUrl, needsBrowserApproval, requestBrowserApproval } from "./approval.ts";
 import { PreviewSnapshotToolkit, PreviewStandardToolkit, PreviewToolkit } from "./tools.ts";
 
 /** Whether a preview the agent
@@ -113,6 +117,78 @@ const invokeTargeted = <A extends object>(
   );
 };
 
+const quote = Schema.encodeSync(Schema.fromJsonString(Schema.String));
+
+const authorizeTabAction = Effect.fn("PreviewToolkit.authorizeTabAction")(function* (
+  caller: Caller,
+  action: string,
+  input: { readonly tabId?: PreviewTabId | undefined },
+  options?: {
+    readonly approvalRequired?: boolean;
+    readonly destination?: string;
+    readonly files?: ReadonlyArray<string>;
+  },
+) {
+  if (!options?.approvalRequired && !needsBrowserApproval(caller)) return input.tabId;
+  const scope = yield* McpInvocationContext.requireThreadMcpCapability("preview");
+  const broker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
+  const status = (tabId: PreviewTabId | undefined) =>
+    broker.invoke<PreviewAutomationStatus>({
+      scope,
+      operation: "status",
+      input: {},
+      updateCurrentTab: false,
+      ...(tabId === undefined ? {} : { tabId }),
+    });
+  const tab = yield* status(input.tabId);
+  if (tab.tabId === null) {
+    return yield* new OrchestratorMcpFailure({
+      code: "invalid_request",
+      message: "Open a preview tab before requesting approval for this browser action.",
+    });
+  }
+  const destination = options?.destination;
+  const files = options?.files ?? [];
+  const target = destination
+    ? `${displayBrowserUrl(tab.url)} → ${destination}`
+    : displayBrowserUrl(tab.url);
+  yield* requestBrowserApproval(
+    { action, input, tabId: tab.tabId, url: tab.url, generation: tab.control?.generation, files },
+    `Allow the agent to ${action} on ${target}?${files.map((file) => `\n${quote(file)}`).join("")}`,
+  );
+  const current = yield* status(tab.tabId);
+  if (
+    current.tabId !== tab.tabId ||
+    current.url !== tab.url ||
+    current.control?.generation !== tab.control?.generation
+  ) {
+    return yield* new OrchestratorMcpFailure({
+      code: "invalid_request",
+      message:
+        "The browser tab changed during approval. Call the tool again to request a new approval.",
+    });
+  }
+  return tab.tabId;
+});
+
+const invokeTabAction = <A extends object>(
+  caller: Caller,
+  operation: PreviewAutomationOperation,
+  action: string,
+  input: {
+    readonly tabId?: PreviewTabId | undefined;
+    readonly [key: string]: unknown;
+  },
+  timeoutMs?: number,
+  destination?: string,
+) =>
+  authorizeTabAction(
+    caller,
+    action,
+    input,
+    destination === undefined ? undefined : { destination },
+  ).pipe(Effect.flatMap((tabId) => invokeTargeted<A>(operation, { ...input, tabId }, timeoutMs)));
+
 const decodeActInput = Record.map(PreviewAutomationActInputs, (schema) =>
   Schema.decodeUnknownEffect(schema),
 );
@@ -190,15 +266,42 @@ export const claimPreviewRecording = Effect.fn("PreviewToolkit.claimRecording")(
 });
 
 const handlers = {
-  preview_dialog: McpToolAccess.actsAsCaller((input) =>
-    invokeTargeted<PreviewAutomationStatus>("dialog", input),
+  preview_dialog: McpToolAccess.actsAsCaller((input, caller) =>
+    invokeTabAction<PreviewAutomationStatus>(
+      caller,
+      "dialog",
+      "respond to a browser dialog",
+      input,
+    ),
   ),
   preview_status: McpToolAccess.readsAsCaller((input) =>
     invokeTargeted<PreviewAutomationStatus>("status", input ?? {}),
   ),
   // Models often pass a dev server as both `url` and `target`; the target knows the environment.
-  preview_open: McpToolAccess.actsAsCaller(({ target, url, ...input }) =>
+  preview_open: McpToolAccess.actsAsCaller(({ target, url, ...input }, caller) =>
     Effect.gen(function* () {
+      if (input.profileId?.toLowerCase() === INCOGNITO_BROWSER_PROFILE_ID) {
+        input.profileId = INCOGNITO_BROWSER_PROFILE_ID;
+      }
+      const persistentProfile =
+        input.profileId === INCOGNITO_BROWSER_PROFILE_ID ? undefined : input.profileId;
+      if (persistentProfile !== undefined || needsBrowserApproval(caller)) {
+        yield* McpInvocationContext.requireThreadMcpCapability("preview");
+        const destination =
+          target === undefined
+            ? displayBrowserUrl(url)
+            : displayBrowserUrl(
+                `${target.protocol ?? "http"}://localhost:${target.port}${target.path ?? ""}`,
+              );
+        const profile =
+          persistentProfile === undefined
+            ? ""
+            : ` using the ${quote(persistentProfile)} browser profile`;
+        yield* requestBrowserApproval(
+          { operation: "open", target, url, input },
+          `Allow the agent to open ${destination}${profile}${(input.open ?? input.show) === false ? " in the background" : ""}?`,
+        );
+      }
       const opened = yield* invokeTargeted<PreviewAutomationStatus>(
         "open",
         normalizePreviewOpenInput(
@@ -212,54 +315,105 @@ const handlers = {
       });
     }),
   ),
-  preview_navigate: McpToolAccess.actsAsCaller((input) =>
-    invokeTargeted<PreviewAutomationStatus>("navigate", input, input.timeoutMs),
+  preview_navigate: McpToolAccess.actsAsCaller((input, caller) =>
+    invokeTabAction<PreviewAutomationStatus>(
+      caller,
+      "navigate",
+      "navigate",
+      input,
+      input.timeoutMs,
+      input.target?.kind === "environment-port"
+        ? displayBrowserUrl(
+            `${input.target.protocol ?? "http"}://localhost:${input.target.port}${input.target.path ?? ""}`,
+          )
+        : displayBrowserUrl(
+            input.url ?? (input.target?.kind === "url" ? input.target.url : undefined),
+          ),
+    ),
   ),
-  preview_resize: McpToolAccess.actsAsCaller((input) =>
-    invokeTargeted<PreviewAutomationResizeResult>("resize", input, input.timeoutMs),
+  preview_resize: McpToolAccess.actsAsCaller((input, caller) =>
+    invokeTabAction<PreviewAutomationResizeResult>(
+      caller,
+      "resize",
+      "resize the browser viewport",
+      input,
+      input.timeoutMs,
+    ),
   ),
-  preview_set_appearance: McpToolAccess.actsAsCaller((input) =>
-    invokeTargeted<PreviewAutomationSetColorSchemeResult>("setColorScheme", input),
+  preview_set_appearance: McpToolAccess.actsAsCaller((input, caller) =>
+    invokeTabAction<PreviewAutomationSetColorSchemeResult>(
+      caller,
+      "setColorScheme",
+      "change browser appearance",
+      input,
+    ),
   ),
-  preview_snapshot: McpToolAccess.readsAsCaller((input) => {
-    const { includeImage, save, ...operationInput } = input ?? {};
-    // The saved file is for people, so it keeps the resolution the agent's image is capped below.
-    return invokeTargeted<PreviewAutomationSnapshot | PreviewAutomationSnapshotMetadata>(
-      "snapshot",
-      {
-        ...operationInput,
-        ...(save === true ? { fullScreenshot: true } : {}),
-        ...(includeImage === true || save === true ? {} : { pixelsRequired: false }),
-      },
-    );
-  }),
-  preview_act: McpToolAccess.actsAsCaller(({ action, ...input }) =>
-    decodeActInput[action](input).pipe(
-      Effect.mapError(
-        (cause) => new OrchestratorMcpFailure({ code: "invalid_request", message: cause.message }),
-      ),
-      Effect.flatMap((decoded) =>
-        invokeTargeted<object>(
-          action,
-          decoded,
-          "timeoutMs" in decoded ? decoded.timeoutMs : undefined,
+  preview_snapshot: McpToolAccess.readsAsCaller((input) =>
+    Effect.gen(function* () {
+      const { includeImage, save, ...operationInput } = input ?? {};
+      let tabId = operationInput.tabId;
+      if (save === true) {
+        const caller = yield* loadCaller();
+        yield* assertLiveCaller(caller);
+        tabId = yield* authorizeTabAction(caller, "save a browser screenshot", input);
+      }
+      // The saved file is for people, so it keeps the resolution the agent's image is capped below.
+      return yield* invokeTargeted<PreviewAutomationSnapshot | PreviewAutomationSnapshotMetadata>(
+        "snapshot",
+        {
+          tabId,
+          ...(save === true ? { fullScreenshot: true } : {}),
+          ...(includeImage === true || save === true ? {} : { pixelsRequired: false }),
+        },
+      );
+    }),
+  ),
+  preview_act: McpToolAccess.actsAsCaller(({ action, ...input }, caller) =>
+    Effect.gen(function* () {
+      const decoded = yield* decodeActInput[action](input).pipe(
+        Effect.mapError(
+          (cause) =>
+            new OrchestratorMcpFailure({ code: "invalid_request", message: cause.message }),
         ),
-      ),
-    ),
+      );
+      const timeoutMs = "timeoutMs" in decoded ? decoded.timeoutMs : undefined;
+      if (action !== "upload" || !("paths" in decoded) || decoded.paths.length === 0) {
+        return yield* invokeTabAction<object>(caller, action, action, decoded, timeoutMs);
+      }
+
+      yield* McpInvocationContext.requireThreadMcpCapability("preview");
+      // actsAsCaller requires a live thread.
+      const upload = yield* BrowserUploadPaths.resolve(caller.caller!, decoded.paths);
+      const uploadInput = { ...decoded, paths: upload.files };
+      const tabId = yield* authorizeTabAction(caller, "upload files", uploadInput, {
+        approvalRequired: upload.needsApproval,
+        files: upload.files,
+      });
+      return yield* invokeTargeted<object>("upload", { ...uploadInput, tabId }, timeoutMs);
+    }),
   ),
-  preview_evaluate: McpToolAccess.actsAsCaller(({ tabId, ...input }) =>
-    invoke<unknown>("evaluate", input, undefined, tabId).pipe(
-      Effect.map(({ result, toolIcon }) => ({
-        value: result ?? null,
-        ...(toolIcon ? { toolIcon } : {}),
-      })),
-    ),
+  preview_evaluate: McpToolAccess.actsAsCaller(({ tabId, ...input }, caller) =>
+    Effect.gen(function* () {
+      const approvedTab = yield* authorizeTabAction(caller, "run JavaScript", { ...input, tabId });
+      const { result, toolIcon } = yield* invoke<unknown>(
+        "evaluate",
+        input,
+        undefined,
+        approvedTab,
+      );
+      return { value: result ?? null, ...(toolIcon ? { toolIcon } : {}) };
+    }),
   ),
   preview_wait_for: McpToolAccess.readsAsCaller((input) =>
     invokeTargeted<object>("waitFor", input, input.timeoutMs),
   ),
-  preview_recording_start: McpToolAccess.actsAsCaller((input) =>
-    invokeTargeted<PreviewAutomationRecordingStatus>("recordingStart", input ?? {}),
+  preview_recording_start: McpToolAccess.actsAsCaller((input, caller) =>
+    invokeTabAction<PreviewAutomationRecordingStatus>(
+      caller,
+      "recordingStart",
+      "start recording the browser",
+      input ?? {},
+    ),
   ),
   preview_recording_stop: McpToolAccess.actsAsCaller((input) =>
     Effect.gen(function* () {

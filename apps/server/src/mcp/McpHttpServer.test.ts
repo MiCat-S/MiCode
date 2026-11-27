@@ -12,6 +12,7 @@ import {
   OrchestratorMcpEnvironmentTarget,
   OrchestratorMcpFailure,
   PreviewTabId,
+  type PreviewAutomationOperation,
   ProjectId,
   ProviderInstanceId,
   ProviderInteractionMode,
@@ -24,6 +25,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
+import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as Tracer from "effect/Tracer";
@@ -101,13 +103,18 @@ const client = McpSchema.McpServerClient.of({
   },
   getClient: Effect.die("unused"),
 });
-const layerTest = McpHttpServer.layerPreviewToolkit.pipe(
-  Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
-  Layer.provideMerge(McpToolAccessTestkit.liveThreadsLayer),
-  Layer.provideMerge(PreviewAutomationBroker.layer),
-  Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-http-server-test-" })),
-  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
-);
+const previewTestLayer = (threads: Layer.Layer<ThreadManagementService.ThreadManagementService>) =>
+  McpHttpServer.layerPreviewToolkit.pipe(
+    Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
+    Layer.provideMerge(threads),
+    Layer.provideMerge(PreviewAutomationBroker.layer),
+    Layer.provide(Layer.mock(ProjectService.ProjectService)({})),
+    Layer.provideMerge(
+      ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-http-server-test-" }),
+    ),
+    Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+  );
+const layerTest = previewTestLayer(McpToolAccessTestkit.liveThreadsLayer);
 const layerPullRequestsTest = McpHttpServer.layerPullRequestsToolkit.pipe(
   Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
   Layer.provideMerge(McpToolAccessTestkit.liveThreadsLayer),
@@ -143,12 +150,16 @@ const snapshotResult = {
   },
 };
 
-const serveSnapshots = (clientId: string, result: unknown) =>
+const serveSnapshots = (
+  clientId: string,
+  result: unknown,
+  supportedOperations?: ReadonlyArray<PreviewAutomationOperation>,
+) =>
   Effect.gen(function* () {
     const broker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
     const connected = yield* Deferred.make<void>();
     const inputs: Array<unknown> = [];
-    const events = yield* broker.connect({ clientId, environmentId });
+    const events = yield* broker.connect({ clientId, environmentId, supportedOperations });
     yield* Stream.runForEach(events, (event) => {
       if (event.type === "connected") return Deferred.succeed(connected, undefined);
       inputs.push(event.request.input);
@@ -157,7 +168,7 @@ const serveSnapshots = (clientId: string, result: unknown) =>
         connectionId: event.connectionId,
         requestId: event.request.requestId,
         ok: true,
-        result,
+        result: event.request.operation === "upload" ? {} : result,
       });
     }).pipe(Effect.forkScoped);
     yield* Deferred.await(connected);
@@ -196,6 +207,162 @@ const callTool = (name: string, args: Record<string, unknown>) =>
   });
 
 const callSnapshot = (args: Record<string, unknown>) => callTool("preview_snapshot", args);
+
+it.effect("Supervised browser actions stop before opening a tab unless approval is available", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const inputs = yield* serveSnapshots("browser-approval-test", {
+        available: true,
+        visible: false,
+        tabId: null,
+        url: null,
+        title: null,
+        loading: false,
+      });
+      const read = yield* callTool("preview_status", {});
+      expect(read.isError).not.toBe(true);
+
+      const open = yield* callTool("preview_open", { url: "https://example.test/" });
+      expect(open.isError).toBe(true);
+      expect(open.content).toEqual([
+        { type: "text", text: expect.stringContaining("cannot request browser approval") },
+      ]);
+      const evaluate = yield* callTool("preview_evaluate", { expression: "document.title" });
+      expect(evaluate.isError).toBe(true);
+      expect(evaluate.content).toEqual([
+        {
+          type: "text",
+          text: expect.stringContaining("Open a preview tab before requesting approval"),
+        },
+      ]);
+      expect(inputs).toEqual([{}, {}]);
+    }),
+  ).pipe(
+    Effect.provide(
+      previewTestLayer(
+        Layer.mock(ThreadManagementService.ThreadManagementService)({
+          getThreadShell: (id) =>
+            Effect.succeed(
+              McpToolAccessTestkit.liveThreadShell(id, {
+                runtimeMode: "approval-required",
+              }),
+            ),
+        }),
+      ),
+    ),
+  ),
+);
+
+it.effect("opening a persistent browser profile uses only the application's approval", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const sessions = yield* McpProviderSessions.McpProviderSessions;
+      yield* sessions.showsApprovalRequests(invocation.thread.providerInstanceId);
+      const inputs = yield* serveSnapshots("browser-profile-approval-test", {
+        available: true,
+        visible: false,
+        tabId: alternateTabId,
+        url: "https://example.test/",
+        title: "Example",
+        loading: false,
+      });
+      const server = yield* McpServer.McpServer;
+      const open = (acceptInApp: boolean) =>
+        server
+          .callTool({
+            name: "preview_open",
+            arguments: {
+              url: "https://example.test/",
+              profileId: "Personal",
+              reuseExistingTab: false,
+            },
+          })
+          .pipe(
+            Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
+            Effect.provideService(McpSchema.McpServerClient, {
+              ...client,
+              clientCapabilities: { elicitation: {} },
+              getClient: Effect.succeed({
+                elicit: ({ message }: { readonly message: string }) =>
+                  Effect.gen(function* () {
+                    expect(message).toContain(
+                      'open https://example.test/ using the "Personal" browser profile',
+                    );
+                    if (acceptInApp)
+                      yield* sessions.answerApprovalRequests(threadId, message, true);
+                    return { action: "accept" as const, content: {} };
+                  }),
+              } as unknown as Effect.Success<typeof client.getClient>),
+            }),
+          );
+
+      const unconfirmed = yield* open(false);
+      expect(unconfirmed.isError).toBe(true);
+      expect(inputs).toEqual([]);
+
+      const approved = yield* open(true);
+      expect(approved.isError, JSON.stringify(approved)).not.toBe(true);
+      expect(inputs).toEqual([
+        { url: "https://example.test/", profileId: "Personal", reuseExistingTab: false },
+      ]);
+    }),
+  ).pipe(Effect.provide(layerTest.pipe(Layer.provideMerge(McpProviderSessions.layer)))),
+);
+
+it.effect("preview uploads stay in the current worktree without user approval", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectoryScoped();
+      const worktreePath = path.join(root, "checkout");
+      const inside = path.join(worktreePath, "fixture.txt");
+      const outside = path.join(root, "fixture.txt");
+      yield* fs.makeDirectory(worktreePath);
+      yield* fs.writeFileString(inside, "fixture");
+      yield* fs.writeFileString(outside, "fixture");
+      const canonicalInside = yield* fs.realPath(inside);
+      const upload = (file: string) =>
+        callTool("preview_act", {
+          action: "upload",
+          paths: [file],
+          tabId: alternateTabId,
+        });
+
+      yield* Effect.gen(function* () {
+        const inputs = yield* serveSnapshots(
+          "browser-upload-test",
+          {
+            available: true,
+            visible: true,
+            tabId: alternateTabId,
+            url: "https://example.test/",
+            title: "Example",
+            loading: false,
+          },
+          ["status", "upload"],
+        );
+
+        const blocked = yield* upload(outside);
+        expect(blocked.isError).toBe(true);
+        expect(inputs).toEqual([{}]);
+
+        const local = yield* upload(inside);
+        expect(local.isError, JSON.stringify({ local, inputs })).not.toBe(true);
+        expect(inputs).toEqual([{}, { paths: [canonicalInside] }, {}]);
+      }).pipe(
+        Effect.provide(
+          previewTestLayer(
+            Layer.mock(ThreadManagementService.ThreadManagementService)({
+              getThreadShell: (id) =>
+                Effect.succeed({ ...McpToolAccessTestkit.liveThreadShell(id), worktreePath }),
+            }),
+          ),
+        ),
+      );
+    }),
+  ).pipe(Effect.provide(NodeServices.layer)),
+);
 
 it.effect.each([
   { input: {}, open: false, message: "No device is open in this thread. Call device_open first." },

@@ -28,6 +28,8 @@ import { McpSchema, Tool, Toolkit } from "effect/ai";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as PreviewAutomationBroker from "../../PreviewAutomationBroker.ts";
 import * as ServerConfig from "../../../config.ts";
+import * as Path from "effect/Path";
+import * as ProjectService from "../../../project/ProjectService.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 
 const dependencies = [
@@ -175,7 +177,12 @@ const PreviewActTool = browserTool(
       PreviewActionResult,
     ]),
     failure: PreviewToolFailure,
-    dependencies,
+    dependencies: [
+      ...dependencies,
+      FileSystem.FileSystem,
+      Path.Path,
+      ProjectService.ProjectService,
+    ],
   }).annotate(Tool.Title, "Act in preview page"),
 );
 

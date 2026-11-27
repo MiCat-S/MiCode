@@ -464,6 +464,7 @@ interface ServerTab {
   readonly actionTimeline: Array<PreviewAutomationActionEvent>;
   readonly control: SessionControl;
   agentOperating: boolean;
+  sharedWithAgent: boolean;
   fileChooserIntercepted: boolean;
   readonly onFileChooser: (chooser: FileChooser) => void;
 
@@ -1279,6 +1280,7 @@ const make = Effect.gen(function* () {
       actionTimeline: [],
       control,
       agentOperating: false,
+      sharedWithAgent: false,
       fileChooserIntercepted: false,
       onFileChooser: (chooser) => {
         pendingFileChooserOffer = pendingFileChooserOffer
@@ -2174,7 +2176,7 @@ const make = Effect.gen(function* () {
   };
 
   const resolveOpenProfile = (requested: string | undefined): string | undefined => {
-    if (requested === undefined) return reportedProfiles?.defaultProfileId;
+    if (requested === undefined) return INCOGNITO_BROWSER_PROFILE_ID;
     const profiles = reportedProfiles?.profiles ?? BUILT_IN_BROWSER_PROFILES;
     const wanted = requested.toLowerCase();
     const match =
@@ -2622,6 +2624,21 @@ const make = Effect.gen(function* () {
     );
   };
 
+  const assertAgentTabAccess = (tab: ServerTab, agentSessionId: string | undefined) => {
+    if (
+      tab.desktop &&
+      tab.profileId !== INCOGNITO_BROWSER_PROFILE_ID &&
+      (tab.control.agentId === null || tab.control.agentId !== agentSessionId) &&
+      !tab.sharedWithAgent
+    ) {
+      throw new ServerBrowserPage.ServerBrowserOperationError({
+        tag: "PreviewAutomationExecutionError",
+        message:
+          "This tab uses a saved browser profile. Ask the user to approve opening a tab in this profile, or to release control if their browser panel offers it.",
+      });
+    }
+  };
+
   const requireTab = async (request: PreviewAutomationRequest) => {
     if (!request.agentSessionId)
       throw new BrowserControlInterrupted({
@@ -2648,6 +2665,7 @@ const make = Effect.gen(function* () {
         message: "No server preview tab is open for this thread. Call preview_open first.",
       });
     }
+    assertAgentTabAccess(tab, request.agentSessionId);
     if (!READ_OPERATIONS.has(request.operation) && !tab.control.agentMayAct(request.agentSessionId))
       throw new BrowserControlInterrupted({
         message:
@@ -2749,6 +2767,7 @@ const make = Effect.gen(function* () {
               { reclaimIdleSlot: true },
             ),
           ));
+        if (existing) assertAgentTabAccess(existing, request.agentSessionId);
         if (existing?.dialog)
           throw new BrowserControlInterrupted({
             message:
@@ -2849,6 +2868,7 @@ const make = Effect.gen(function* () {
         }
         // A stop cannot act twice (a retry finds no recording);
         // dropping a late one would leave capture running.
+        assertAgentTabAccess(tab, request.agentSessionId);
         return tab.control.agent(request.agentSessionId ?? "", () => stopRecording(tab));
       }
     }
@@ -3640,6 +3660,7 @@ const make = Effect.gen(function* () {
           try {
             if (message.type === "takeControl") {
               const taking = tab.control.take(viewer.id);
+              if (tab.control.controller === viewer.id) tab.sharedWithAgent = false;
               broadcastControl(tab);
               await taking;
               pushFileChooser(tab);
@@ -3649,6 +3670,7 @@ const make = Effect.gen(function* () {
               );
               broadcastControl(tab);
               await releasing;
+              tab.sharedWithAgent = tab.control.controller === null;
             } else if (
               message.type === "dialog" &&
               tab.control.controller === viewer.id &&

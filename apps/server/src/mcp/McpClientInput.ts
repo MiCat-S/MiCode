@@ -53,6 +53,16 @@ const threadRequests = Effect.gen(function* () {
   return sessions === undefined || thread === undefined ? undefined : { sessions, thread };
 });
 
+export const canVerifyThreadApproval = Effect.fn("McpClientInput.canVerifyThreadApproval")(
+  function* () {
+    const requests = yield* threadRequests;
+    return (
+      requests !== undefined &&
+      (yield* requests.sessions.areApprovalRequestsShown(requests.thread.providerInstanceId))
+    );
+  },
+);
+
 /**
  * Ends the request `id` and reads the client's "accept" for it. Where the thread's adapter shows
  * T3 Code's own requests, only the person's answer in the app, for this request and `state`, is

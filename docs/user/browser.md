@@ -28,4 +28,7 @@ Agents can open tabs, navigate, click, type, inspect accessibility snapshots, an
 
 - Toggle **Settings → Browser → Agent browser access** (per environment or project override; takes effect when the next agent session starts).
 - **Floating preview**: By default, agent-opened tabs float over chat (**Settings → Browser → Auto-show floating preview**). Turn this off to open them in the right panel instead.
-- **Take control**: Click **Take control** before interacting with an agent's tab, and release control when you want the agent to resume.
+- New agent tabs open in Incognito. Agents need your approval to open a saved profile. The profile you choose for your own tabs still applies.
+- When an agent attaches a file outside the thread's project folder or worktree, the approval card shows the browser page and the file paths. You can also select files yourself in the browser panel.
+- In **Supervised**, actions such as opening a page, clicking, typing, and running page scripts ask for your approval. An agent can still check the status of a tab and inspect pages it can access. Claude and Codex can show these approval requests in chat. If your provider cannot request approval, perform the action directly in the browser panel.
+- In the streamed browser panel, click **Take control** before interacting with an agent's tab and **Release control** when you want the agent to resume. Releasing a tab you opened in a saved desktop profile also lets the agent use it with its active logins.
