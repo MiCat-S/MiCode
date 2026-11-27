@@ -28,12 +28,8 @@ describe("IssueTrackerConnections", () => {
     let random = 0;
     const tracker = {
       kind: LINEAR,
-      standalone: {
-        tracker: LINEAR,
-        host: "linear.app",
-        credential: { label: "API key", helpUrl: null },
-      },
-      probeCredential: ({ token }: { readonly token: string }) =>
+      standalone: { tracker: LINEAR, host: "linear.app" },
+      probeCredential: (token: string) =>
         token === "bad"
           ? Effect.fail(
               new IssueTrackerError({
