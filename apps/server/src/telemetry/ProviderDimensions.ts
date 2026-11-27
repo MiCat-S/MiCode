@@ -29,8 +29,6 @@ export function providerDimensions(
 }
 
 const DATED_SNAPSHOT = /-\d{8}$/u;
-// Some agents report the model they ran with the effort level appended, as in `gemini-4-neon-low`.
-const EFFORT_SUFFIX = /-(?:minimal|low|medium|high|xhigh|max)$/u;
 
 const MANIFEST_LABELS: ReadonlyMap<string, string> = new Map(
   Object.values(BUNDLED_MODEL_MANIFEST.providers ?? {}).flatMap((catalog) =>
@@ -75,12 +73,7 @@ export function modelLabel(
 
 function catalogSlug(providers: ReadonlyArray<ServerProvider>, model: string) {
   const leaf = model.slice(model.lastIndexOf("/") + 1);
-  const candidates = [
-    model,
-    leaf,
-    leaf.replace(DATED_SNAPSHOT, ""),
-    leaf.replace(EFFORT_SUFFIX, ""),
-  ];
+  const candidates = [model, leaf, leaf.replace(DATED_SNAPSHOT, "")];
   for (const candidate of candidates) {
     const label = MANIFEST_LABELS.get(candidate);
     if (label !== undefined) return label;
