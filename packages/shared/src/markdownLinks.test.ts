@@ -10,8 +10,39 @@ import {
 import {
   inlineCodeFilePathCandidate,
   isMarkdownFileLinkLabel,
+  isRemoteMarkdownMediaUri,
   parseMarkdownFileLink,
 } from "./markdownLinks.ts";
+
+describe("isRemoteMarkdownMediaUri", () => {
+  it("waits for a click before loading media from a public host", () => {
+    for (const uri of [
+      "https://example.com/pixel.png?d=secret",
+      "//cdn.example.com/a.png",
+      "http://203.0.113.9/a.png",
+      "not a url",
+    ]) {
+      expect(isRemoteMarkdownMediaUri(uri, "http://localhost:3773"), uri).toBe(true);
+    }
+  });
+
+  it("loads inline data, this app's own media, and local-network media right away", () => {
+    for (const uri of [
+      "data:image/png;base64,AAAA",
+      "blob:http://localhost:3773/1",
+      "https://mi.example.com/api/assets/1.png",
+      "http://localhost:5173/shot.png",
+      "http://127.0.0.1/shot.png",
+      "http://[::1]/shot.png",
+      "http://192.168.1.20/shot.png",
+      "http://100.101.102.103/shot.png",
+      "https://my-mac.tailnet-abc.ts.net/shot.png",
+      "http://printer.local/shot.png",
+    ]) {
+      expect(isRemoteMarkdownMediaUri(uri, "https://mi.example.com"), uri).toBe(false);
+    }
+  });
+});
 
 describe("isMarkdownFileLinkLabel", () => {
   // regression: #15509 descriptive labels are not mistaken for the linked file name

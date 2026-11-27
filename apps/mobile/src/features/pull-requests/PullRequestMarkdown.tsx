@@ -30,13 +30,13 @@ import { useMarkdownPreviewStyles } from "../files/FileMarkdownPreview";
 import { markdownImageSources } from "../../lib/markdownImageSources";
 import { markdownReferenceDefinitions } from "../../lib/markdownDocument";
 import { FilePreviewGallery, useFilePreviewGallery } from "../../components/ui/FilePreviewGallery";
-import { pullRequestImageSource } from "./pullRequestMediaSource";
+import { needsRemoteMediaConsent, pullRequestImageSource } from "./pullRequestMediaSource";
 import {
   FilePreviewModal,
   type FilePreviewSource,
   type FilePreviewItem,
 } from "../../components/ui/FilePreviewModal";
-import { ThreadMarkdownImageView } from "../threads/ThreadMarkdownImage";
+import { ThreadMarkdownImageView, ThreadRemoteMediaGate } from "../threads/ThreadMarkdownImage";
 import type { MarkdownImageRenderer } from "../../native/SelectableMarkdownText";
 import type { SelectableMarkdownTextProps } from "../../native/SelectableMarkdownText.types";
 
@@ -200,13 +200,25 @@ function PullRequestBodySegmentView(props: {
     );
   }
   if (segment.kind === "attachment") {
-    return (
+    const attachment = (
       <PullRequestMedia
         key={segment.url}
         url={segment.url}
         kind={segment.media}
         {...(segment.label ? { caption: segment.label } : {})}
       />
+    );
+    return needsRemoteMediaConsent(segment.url) ? (
+      <ThreadRemoteMediaGate
+        key={segment.url}
+        uri={segment.url}
+        kind={segment.media === "video" ? "video" : "image"}
+        alt={segment.label ?? null}
+      >
+        {attachment}
+      </ThreadRemoteMediaGate>
+    ) : (
+      attachment
     );
   }
   return (
@@ -244,9 +256,17 @@ function PullRequestMarkdownContent(props: {
     void openPullRequest(href);
   };
   const [preview, setPreview] = useState<FilePreviewSource | null>(null);
-  const renderImage: MarkdownImageRenderer = (image) => (
-    <MarkdownImage href={resolveMediaUrl(image.href)} alt={image.alt} onPreview={setPreview} />
-  );
+  const renderImage: MarkdownImageRenderer = (image) => {
+    const href = resolveMediaUrl(image.href);
+    const markdownImage = <MarkdownImage href={href} alt={image.alt} onPreview={setPreview} />;
+    return needsRemoteMediaConsent(href) ? (
+      <ThreadRemoteMediaGate key={href} uri={href} kind="image" alt={image.alt}>
+        {markdownImage}
+      </ThreadRemoteMediaGate>
+    ) : (
+      markdownImage
+    );
+  };
   const styles = useMarkdownPreviewStyles();
   return (
     <FilePreviewGallery value={props.gallery}>

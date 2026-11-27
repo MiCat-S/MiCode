@@ -5,7 +5,7 @@ import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { Image } from "expo-image";
 import { T, useGT } from "gt-react-native";
-import { createContext, useContext, useId, useState } from "react";
+import { createContext, useContext, useId, useState, type ReactNode } from "react";
 import { fetch } from "expo/fetch";
 import { parse, SvgAst, type JsxAST } from "react-native-svg";
 import { Pressable, StyleSheet, View, type ViewStyle } from "react-native";
@@ -347,6 +347,43 @@ export function ThreadMarkdownImage(props: {
         );
       }}
     />
+  );
+}
+
+function mediaHost(uri: string): string {
+  try {
+    return new URL(uri).host;
+  } catch {
+    return uri;
+  }
+}
+
+/** Media from a public host stays a button until the user loads it. */
+export function ThreadRemoteMediaGate(props: {
+  readonly uri: string;
+  readonly kind: "image" | "video";
+  readonly alt: string | null;
+  readonly children: ReactNode;
+}) {
+  const gt = useGT();
+  const [loaded, setLoaded] = useState(false);
+  if (loaded) return props.children;
+  const host = mediaHost(props.uri);
+  const label =
+    props.kind === "video"
+      ? gt("Load video from {host}", { host })
+      : gt("Load image from {host}", { host });
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={() => setLoaded(true)}
+      className="items-center justify-center rounded-[10px] bg-md-code-bg px-3 py-3"
+    >
+      <Text className="text-center text-xs text-foreground-muted" numberOfLines={2}>
+        {props.alt ? `${label} · ${props.alt}` : label}
+      </Text>
+    </Pressable>
   );
 }
 

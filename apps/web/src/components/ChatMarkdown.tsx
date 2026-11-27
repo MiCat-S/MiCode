@@ -69,6 +69,7 @@ import {
   markdownImageSourceFragment,
 } from "@t3tools/client-runtime/markdown-images";
 import { mediaUrlReference } from "@t3tools/client-runtime/media-reference";
+import { isRemoteMarkdownMediaUri } from "@t3tools/shared/markdownLinks";
 import { mediaKindFromPath, mediaMimeTypeFromExtension } from "@t3tools/shared/mediaPreview";
 import { InlineAudioPreview } from "./files/InlineAudioPreview";
 import { HostImageUrlContext } from "./chat/hostImageUrl";
@@ -217,6 +218,7 @@ import {
   ChatMarkdownAssetImage,
   ChatMarkdownImage,
   ChatMarkdownImageFallback,
+  ChatMarkdownRemoteMedia,
   ChatMarkdownVideo,
   MarkdownLinkContext,
   markdownImageCopy,
@@ -1691,6 +1693,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
     const authoredSizeStyle = authoredImageSizeStyle(width, height);
     const imageSource = classifyMarkdownImageSource(classifiedSrc, imageBaseDir ?? cwd);
     const mediaKind = mediaKindFromPath(classifiedSrc);
+    const appOrigin = window.location.origin;
     if (mediaKind === "audio") {
       const filePath = imageSource._tag === "WorkspaceFile" ? imageSource.path : null;
       const name =
@@ -1700,7 +1703,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
       if (imageSource._tag !== "Direct" && !(filePath && threadRef)) {
         return <ChatMarkdownImageFallback alt={altText} copyMarkdown={copyMarkdown} kind="audio" />;
       }
-      return (
+      const audio = (
         <InlineAudioPreview
           key={classifiedSrc}
           name={name}
@@ -1719,6 +1722,20 @@ const CHAT_MARKDOWN_COMPONENTS = {
               ? { src: resolveProtocolRelativeMediaUrl(imageSource.uri) }
               : {})}
         />
+      );
+      return imageSource._tag === "Direct" &&
+        isRemoteMarkdownMediaUri(imageSource.uri, appOrigin) ? (
+        <ChatMarkdownRemoteMedia
+          key={classifiedSrc}
+          uri={resolveProtocolRelativeMediaUrl(imageSource.uri)}
+          kind="audio"
+          alt={altText}
+          copyMarkdown={copyMarkdown}
+        >
+          {audio}
+        </ChatMarkdownRemoteMedia>
+      ) : (
+        audio
       );
     }
     if (shouldRenderMarkdownImageAsFileLink(imageSource, mediaKind)) {
@@ -1774,8 +1791,8 @@ const CHAT_MARKDOWN_COMPONENTS = {
         src: mediaSrc,
         ...(reference ? { reference } : {}),
       };
-      if (kind === "video") {
-        return (
+      const media =
+        kind === "video" ? (
           <ChatMarkdownVideo
             src={mediaSrc}
             alt={altText}
@@ -1784,22 +1801,33 @@ const CHAT_MARKDOWN_COMPONENTS = {
             style={authoredSizeStyle}
             actionsSource={actionsSource}
           />
+        ) : (
+          <ChatMarkdownImage
+            key={mediaSrc}
+            src={mediaSrc}
+            alt={altText}
+            copyMarkdown={copyMarkdown}
+            standalone={standalone}
+            className={className}
+            style={authoredSizeStyle}
+            imageProps={imageProps}
+            actionsSource={actionsSource}
+            originalUrl={originalUrl}
+            onImageExpand={imageExpand}
+          />
         );
-      }
-      return (
-        <ChatMarkdownImage
+      return isRemoteMarkdownMediaUri(mediaSrc, appOrigin) ? (
+        <ChatMarkdownRemoteMedia
           key={mediaSrc}
-          src={mediaSrc}
+          uri={mediaSrc}
+          kind={kind}
           alt={altText}
           copyMarkdown={copyMarkdown}
-          standalone={standalone}
-          className={className}
-          style={authoredSizeStyle}
-          imageProps={imageProps}
-          actionsSource={actionsSource}
-          originalUrl={originalUrl}
-          onImageExpand={imageExpand}
-        />
+        >
+          {media}
+        </ChatMarkdownRemoteMedia>
+      ) : (
+        media
       );
     }
     const hostImageUrl = use(HostImageUrlContext);

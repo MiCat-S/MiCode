@@ -239,6 +239,24 @@ it("keeps decimal markers in nested user lists while documents keep their counte
   ).toEqual(["decimal", "lower-alpha", "lower-roman"]);
 });
 
+it("waits for a click before loading an image from a public host", async () => {
+  setup();
+  await using screen = await renderText(
+    "![Chart](https://images.example.com/chart.png?id=1) ![Local](http://localhost:5173/shot.png)",
+  );
+  const remote = screen.getByRole("button", { name: /Load image from images\.example\.com/ });
+  await expect.element(remote).toBeVisible();
+  expect(screen.container.querySelector('img[src^="https://images.example.com"]')).toBeNull();
+  expect(
+    screen.container.querySelector('img[src="http://localhost:5173/shot.png"]'),
+  ).not.toBeNull();
+
+  await remote.click();
+  await expect
+    .element(screen.getByAltText("Chart"))
+    .toHaveAttribute("src", "https://images.example.com/chart.png?id=1");
+});
+
 it("shows unavailable audio when a workspace embed has no thread", async () => {
   setup();
   await using screen = await renderText("![recording](clip.wav)");
@@ -387,23 +405,21 @@ it("highlights a code block's own source when an earlier block of the same lengt
 });
 
 describe("ChatMarkdown favicon privacy", () => {
-  it("suppresses private link images while preserving public links across updates", async () => {
+  it("draws link icons locally instead of loading them from any host", async () => {
     setup();
     const markdown = (url: string) => <ChatMarkdown cwd="/tmp/project" text={`[Link](${url})`} />;
     await using screen = await render(markdown("https://example.com"));
     const { container, rerender } = screen;
-    expect([...container.querySelectorAll("img")].map((image) => image.src)).toEqual([
-      "https://www.google.com/s2/favicons?domain=example.com&sz=32",
-    ]);
-    for (const url of ["http://192.168.1.10:8080", "http://localhost:3000", "http://home.arpa"]) {
+    for (const url of [
+      "https://example.com",
+      "http://192.168.1.10:8080",
+      "http://localhost:3000",
+      "https://github.com/pingdotgg/t3code/pull/1",
+    ]) {
       await rerender(markdown(url));
-      expect(container.querySelectorAll("img")).toHaveLength(0);
+      expect(container.querySelectorAll("img"), url).toHaveLength(0);
+      expect(container.querySelector("a svg"), url).not.toBeNull();
     }
-    await rerender(markdown("https://example.com"));
-    expect(container.querySelectorAll("img")).toHaveLength(1);
-    await rerender(markdown("https://github.com/pingdotgg/t3code/pull/1"));
-    expect(container.querySelectorAll("img")).toHaveLength(0);
-    expect(container.querySelector("a svg")).not.toBeNull();
   });
 });
 

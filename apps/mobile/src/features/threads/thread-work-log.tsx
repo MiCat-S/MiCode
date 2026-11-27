@@ -58,7 +58,7 @@ import * as DateTime from "effect/DateTime";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { environmentThreadDetails, threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { toolActivityFaviconUrl } from "@t3tools/shared/favicon";
+import { toolActivityIconUrl } from "@t3tools/shared/favicon";
 import { isJavaScriptReplTool } from "@t3tools/shared/toolActivity";
 import { useMarkdownCodeHighlight } from "./markdownCodeHighlightState";
 import { highlightCommand, type HighlightedLines, withTokenStarts } from "../../lib/highlights";
@@ -1573,8 +1573,8 @@ function ToolActivityIconView(props: {
   if (!props.icon) {
     return <WorkLogIcon icon={props.fallback} color={props.fallbackColor} />;
   }
-  if (props.icon._tag === "website") {
-    const source = toolActivityFaviconUrl(props.icon, props.themeAppearance, 32);
+  if (props.icon._tag !== "native-app") {
+    const source = toolActivityIconUrl(props.icon, props.themeAppearance);
     return source ? (
       <ToolActivityImage
         key={source}
@@ -1585,21 +1585,6 @@ function ToolActivityIconView(props: {
       />
     ) : (
       <WorkLogIcon icon={props.fallback} color={props.fallbackColor} />
-    );
-  }
-  if (props.icon._tag === "themed-logo") {
-    const source =
-      props.themeAppearance === "dark"
-        ? (props.icon.logoUrlDark ?? props.icon.logoUrl)
-        : props.icon.logoUrl;
-    return (
-      <ToolActivityImage
-        key={source}
-        source={source}
-        fallback={props.fallback}
-        color={props.fallbackColor}
-        themeAppearance={props.themeAppearance}
-      />
     );
   }
   return (

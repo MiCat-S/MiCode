@@ -1,7 +1,7 @@
 import { mediaFileReference, mediaUrlReference } from "@t3tools/client-runtime/media-reference";
 import type { AssetResource, EnvironmentId, SOURCE_CONTROL_MEDIA_ASSET } from "@t3tools/contracts";
 import { msg, useGT, useMessages } from "gt-react";
-import { TriangleAlertIcon } from "lucide-react";
+import { AudioLinesIcon, ImageIcon, TriangleAlertIcon, VideoIcon } from "lucide-react";
 import {
   createContext,
   memo,
@@ -11,6 +11,7 @@ import {
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  type ReactNode,
 } from "react";
 
 import { useAssetUrlRefresh, useAssetUrlState } from "../../assets/assetUrls";
@@ -171,6 +172,52 @@ export function ChatMarkdownImageFallback(props: {
     <MediaActions source={props.actionsSource}>{content}</MediaActions>
   ) : (
     content
+  );
+}
+
+function mediaHost(uri: string): string {
+  try {
+    return new URL(uri).host;
+  } catch {
+    return uri;
+  }
+}
+
+/** Media from a public host shows as a button until the user loads it. */
+export function ChatMarkdownRemoteMedia(props: {
+  readonly uri: string;
+  readonly kind: "image" | "video" | "audio";
+  readonly alt: string;
+  readonly copyMarkdown: string | undefined;
+  readonly children: ReactNode;
+}) {
+  const gt = useGT();
+  const [loaded, setLoaded] = useState(false);
+  if (loaded) return props.children;
+  const host = mediaHost(props.uri);
+  const Icon =
+    props.kind === "video" ? VideoIcon : props.kind === "audio" ? AudioLinesIcon : ImageIcon;
+  const label =
+    props.kind === "video"
+      ? gt("Load video from {host}", { host })
+      : props.kind === "audio"
+        ? gt("Load audio from {host}", { host })
+        : gt("Load image from {host}", { host });
+  return (
+    <button
+      type="button"
+      data-markdown-copy={props.copyMarkdown}
+      onClick={() => setLoaded(true)}
+      className={cn(
+        CHAT_MARKDOWN_MEDIA_LAYOUT_CLASS_NAME,
+        "max-w-full cursor-pointer truncate rounded-md border border-border/40 bg-muted/40 px-2 py-1 text-left text-xs text-muted-foreground hover:bg-muted/70 hover:text-foreground",
+      )}
+    >
+      <span className="inline-flex max-w-full items-center gap-1.5">
+        <Icon aria-hidden className="size-3.5 shrink-0" />
+        <span className="truncate">{[label, props.alt].filter(Boolean).join(" · ")}</span>
+      </span>
+    </button>
   );
 }
 

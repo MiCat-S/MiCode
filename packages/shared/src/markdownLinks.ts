@@ -5,6 +5,7 @@ import {
   stripSlashPrefixedWindowsDrive,
   workspaceRelativeFilePath,
 } from "./path.ts";
+import { isPrivateNetworkHost, isSharedAddressSpaceHost } from "./hostClassification.ts";
 import {
   type FilePathPosition,
   formatFilePathPosition,
@@ -343,6 +344,22 @@ export function classifyMarkdownImageSource(
   if (!workspaceRoot) return { _tag: "Blocked" };
 
   return { _tag: "WorkspaceFile", path: joinWorkspacePath(workspaceRoot, path), relative: true };
+}
+
+/**
+ * Loading media from someone else's host tells it the viewer's address, and an agent can encode
+ * data in the URL, so only media from this app or the local network loads without a click.
+ */
+export function isRemoteMarkdownMediaUri(uri: string, appOrigin?: string): boolean {
+  if (/^(?:data|blob):/i.test(uri)) return false;
+  let url: URL;
+  try {
+    url = new URL(uri.startsWith("//") ? `https:${uri}` : uri);
+  } catch {
+    return true;
+  }
+  if (appOrigin !== undefined && url.origin === appOrigin) return false;
+  return !isPrivateNetworkHost(url.hostname) && !isSharedAddressSpaceHost(url.hostname);
 }
 
 export function shouldRenderMarkdownImageAsFileLink(

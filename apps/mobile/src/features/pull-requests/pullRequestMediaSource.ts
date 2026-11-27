@@ -1,4 +1,5 @@
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { isRemoteMarkdownMediaUri } from "@t3tools/shared/markdownLinks";
 import { SOURCE_CONTROL_MEDIA_ASSET, type EnvironmentId } from "@t3tools/contracts";
 import type { FilePreviewItem } from "../../components/ui/FilePreviewModal.types";
 
@@ -29,4 +30,9 @@ export function pullRequestImageSource(
   location: PullRequestMediaLocation | null,
 ): FilePreviewItem {
   return { kind: "image", ...pullRequestMediaSource(url, location) };
+}
+
+/** Forge media goes through the environment; anything else waits for the user to load it. */
+export function needsRemoteMediaConsent(url: string): boolean {
+  return !sourceControlClients.mediaUrl(url)?.fetchUrl && isRemoteMarkdownMediaUri(url);
 }

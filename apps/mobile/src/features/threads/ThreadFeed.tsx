@@ -111,6 +111,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { classifyMarkdownImageSource } from "@t3tools/client-runtime/markdown-images";
+import { isRemoteMarkdownMediaUri } from "@t3tools/shared/markdownLinks";
 import {
   contextCompactionTokenCounts,
   resolveViewedImageAsset,
@@ -332,6 +333,7 @@ import {
   MarkdownImageAvailableWidthContext,
   ThreadMarkdownImage,
   ThreadMarkdownImageUnavailable,
+  ThreadRemoteMediaGate,
   ThreadMarkdownImageView,
 } from "./ThreadMarkdownImage";
 import { ZoomableImagePressable } from "./ZoomableImagePressable";
@@ -3615,6 +3617,11 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     },
   };
   const renderMarkdownImage: MarkdownImageRenderer = (image) => {
+    const imageSource = classifyMarkdownImageSource(image.href, props.workspaceRoot ?? null);
+    const remoteUri =
+      imageSource._tag === "Direct" && isRemoteMarkdownMediaUri(imageSource.uri)
+        ? imageSource.uri
+        : null;
     const media = resolveMarkdownMediaPreview(image.href, {
       environmentId: props.environmentId,
       threadId: props.threadId,
@@ -3622,12 +3629,19 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       imageEmbed: true,
     });
     if (media?.kind === "video") {
-      return (
+      const video = (
         <ThreadMarkdownVideo
           key={image.href}
           source={{ ...media.source, name: image.alt ?? media.source.name }}
           onPlaybackStart={onInlinePlaybackStart}
         />
+      );
+      return remoteUri ? (
+        <ThreadRemoteMediaGate key={image.href} uri={remoteUri} kind="video" alt={image.alt}>
+          {video}
+        </ThreadRemoteMediaGate>
+      ) : (
+        video
       );
     }
     if (media?.kind === "audio") {
@@ -3662,9 +3676,8 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         </Text>
       );
     }
-    const imageSource = classifyMarkdownImageSource(image.href, props.workspaceRoot ?? null);
     if (imageSource._tag === "Direct") {
-      return (
+      const directImage = (
         <ThreadMarkdownImageView
           uri={normalizeNativeMarkdownUrl(imageSource.uri)}
           sourceKey={imageSource.uri}
@@ -3679,6 +3692,13 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
           actionsSource={media?.source.actionsSource}
           onPressPreview={onPressPreview}
         />
+      );
+      return remoteUri ? (
+        <ThreadRemoteMediaGate key={image.href} uri={remoteUri} kind="image" alt={image.alt}>
+          {directImage}
+        </ThreadRemoteMediaGate>
+      ) : (
+        directImage
       );
     }
     if (

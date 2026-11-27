@@ -4745,6 +4745,8 @@
   "df880341ff5855a4": "No disponible · toca reproducir para reintentar",
   "c789ca71fee32889": "Imagen de Markdown",
   "b544b6d03b40aa09": "Imagen no disponible. {detail}",
+  "d388013849068ce4": "Cargar video de {host}",
+  "402dbc52161d1b40": "Cargar imagen de {host}",
   "280c97ea2a4db41e": "Cargando la imagen…",
   "dafcea6833ff1b2f": "{appName}, Hilos",
   "9e665ecb41862e2b": "Cargando hilos…",
