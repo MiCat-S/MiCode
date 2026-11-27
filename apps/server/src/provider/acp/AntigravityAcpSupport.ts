@@ -178,8 +178,6 @@ export function antigravitySessionMode(
   return modeId === "yolo" || modeId === "auto_edit" ? "default" : modeId;
 }
 
-// Only calls that name T3's server: before agy 1.5.8 "Running <tool>" names no server, so another
-// MCP server's tool of the same name would pass.
 export function antigravityPermissionDisposition(
   policy: AcpRuntimePolicy,
   request: EffectAcpSchema.RequestPermissionRequest,
