@@ -1,4 +1,3 @@
-import { ANTIGRAVITY_DEFAULT_MODEL } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Exit from "effect/Exit";
 
@@ -43,8 +42,7 @@ export function normalizeModelMetricLabel(model: string | null | undefined): str
   if (normalized.includes("claude")) {
     return "claude";
   }
-  // Antigravity's default alias names no model; its default is a Gemini model.
-  if (normalized.includes("gemini") || normalized === ANTIGRAVITY_DEFAULT_MODEL) {
+  if (normalized.includes("gemini")) {
     return "gemini";
   }
   return "other";
