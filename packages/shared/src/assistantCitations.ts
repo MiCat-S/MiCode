@@ -119,6 +119,19 @@ export function serializeAssistantCitation(citation: AssistantCitation): string 
   return `[Assistant quote](${formatAssistantCitationHref(citation)})`;
 }
 
+/** Copies can leave the app, so they keep the visible quote and comment but not its unseen context. */
+export function serializeCopiedAssistantCitation(citation: AssistantCitation): string {
+  return serializeAssistantCitation({ ...citation, prefix: "", suffix: "" });
+}
+
+export function withoutAssistantCitationContext(text: string): string {
+  if (!text.includes(`[Assistant quote](${CITATION_HREF_PREFIX}`)) return text;
+  return text.replace(CITATION_LINK, (source: string, href: string) => {
+    const citation = parseAssistantCitationHref(href);
+    return citation ? serializeCopiedAssistantCitation(citation) : source;
+  });
+}
+
 export function collectAssistantCitations(text: string) {
   const citations: { citation: AssistantCitation; source: string; start: number; end: number }[] =
     [];

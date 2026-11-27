@@ -3,6 +3,7 @@ import type { AssistantCitation, ResponseContextRecord } from "@t3tools/contract
 import {
   assistantCitationLabel,
   serializeAssistantCitation,
+  serializeCopiedAssistantCitation,
 } from "@t3tools/shared/assistantCitations";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useGT } from "gt-react";
@@ -42,8 +43,9 @@ function useCitationSourceLinkProps(citation: AssistantCitation) {
     scopeThreadRef(citation.environmentId, citation.threadId),
   );
   return {
-    ...assistantCitationRoute(citation, sourceThread),
-    "data-markdown-copy": serializeAssistantCitation(citation),
+    // The href can be copied, so only the click carries the quote's context for source matching.
+    ...assistantCitationRoute({ ...citation, prefix: "", suffix: "" }, sourceThread),
+    "data-markdown-copy": serializeCopiedAssistantCitation(citation),
     onClick: (event: ReactMouseEvent<HTMLAnchorElement>) => {
       if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
         return;
@@ -132,8 +134,8 @@ export function AssistantCitationEmbed({
   return (
     <ResponseCard
       citation={citation}
-      copyMarkdown={serializeAssistantCitation(citation)}
-      cardCopyMarkdown={serializeAssistantCitation(quoted)}
+      copyMarkdown={serializeCopiedAssistantCitation(citation)}
+      cardCopyMarkdown={serializeCopiedAssistantCitation(quoted)}
       label={gt("Go to quoted response: {label}", { label: assistantCitationLabel(quoted) })}
       comment={comment}
       leading={leading}
@@ -283,7 +285,7 @@ export function AssistantCitationChip({
       kind="citation"
       contentEditable={false}
       data-assistant-citation-chip="true"
-      data-markdown-copy={serializeAssistantCitation(citation)}
+      data-markdown-copy={serializeCopiedAssistantCitation(citation)}
     >
       {composerSourceLink}
       {commentEditor ? (

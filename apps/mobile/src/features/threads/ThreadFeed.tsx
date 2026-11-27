@@ -91,6 +91,7 @@ import {
   threadLinkRefs,
 } from "@t3tools/shared/threadLinks";
 import { PROMPT_LINK_MAX_PROMPT_LENGTH } from "@t3tools/shared/promptLinks";
+import { withoutAssistantCitationContext } from "@t3tools/shared/assistantCitations";
 import {
   parseComposerContextHref,
   collectComposerContextReferences,
@@ -435,7 +436,7 @@ function UserMessageCopyButton(props: {
   const button = (
     <CopyTextButton
       accessibilityLabel={gt("Copy message")}
-      text={props.text}
+      text={withoutAssistantCitationContext(props.text)}
       onCopy={props.onCopy}
       tintColor={props.tintColor}
       buttonSize={28}
@@ -2649,11 +2650,14 @@ function renderFeedEntry(
                   onCopy={
                     message.context && presentation.attribution !== "guest"
                       ? () =>
-                          writeComposerContextClipboard(message.text, {
-                            version: 1,
-                            source: { environmentId: props.environmentId, messageId: message.id },
-                            records: message.context!.records,
-                          })
+                          writeComposerContextClipboard(
+                            withoutAssistantCitationContext(message.text),
+                            {
+                              version: 1,
+                              source: { environmentId: props.environmentId, messageId: message.id },
+                              records: message.context!.records,
+                            },
+                          )
                       : undefined
                   }
                   tintColor={iconSubtleColor}

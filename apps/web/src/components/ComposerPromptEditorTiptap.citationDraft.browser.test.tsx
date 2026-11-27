@@ -234,3 +234,27 @@ it("cancels a new citation while dictation makes the composer read-only", async 
   await expect.element(page.getByLabelText("Comment on selected text")).not.toBeInTheDocument();
   expect(screen.container.querySelector("output")?.dataset.prompt).toBe("See ");
 });
+
+it("copies a quote from the composer without the unseen words around it", async () => {
+  const editorRef = createRef<ComposerPromptEditorHandle>();
+  const withContext = { ...citation, prefix: "sk-secret ", suffix: " hunter2" };
+  await using _screen = await render(
+    <Composer
+      question={false}
+      editorRef={editorRef}
+      initialPrompt={`See ${serializeAssistantCitation(withContext)} now`}
+    />,
+  );
+  const editor = page.getByTestId("composer-editor");
+  await editor.click();
+  await userEvent.keyboard("{ControlOrMeta>}a{/ControlOrMeta}");
+
+  const clipboardData = new DataTransfer();
+  editor
+    .element()
+    .dispatchEvent(new ClipboardEvent("copy", { bubbles: true, cancelable: true, clipboardData }));
+
+  expect(clipboardData.getData("text/plain")).toBe(
+    `See ${serializeAssistantCitation({ ...withContext, prefix: "", suffix: "" })} now`,
+  );
+});

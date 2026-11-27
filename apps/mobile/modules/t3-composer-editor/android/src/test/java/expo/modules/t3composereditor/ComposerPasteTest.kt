@@ -92,6 +92,20 @@ class ComposerPasteTest {
   }
 
   @Test
+  fun copyDropsAQuotesUnseenContext() {
+    val link = "[Assistant quote](t3-citation://v1/env/thread/msg?text=hello&start=0&end=5"
+    val tail = " at https://x.test/?prefix=keep"
+    editor.setText("See $link&prefix=sk-secret+&suffix=+hunter2&comment=why)$tail")
+    editor.setSelection(0, editor.length())
+
+    assertTrue(editor.onTextContextMenuItem(android.R.id.copy))
+    assertEquals(
+      "See $link&prefix=&suffix=&comment=why)$tail",
+      clipboard.primaryClip?.getItemAt(0)?.text?.toString(),
+    )
+  }
+
+  @Test
   fun shortcutKeepsLargeTextInlineAndUndoable() {
     val pasted = "x".repeat(32 * 1024)
     clipboard.setPrimaryClip(ClipData.newPlainText("test", pasted))

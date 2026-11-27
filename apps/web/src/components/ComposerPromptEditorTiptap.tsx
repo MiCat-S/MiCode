@@ -38,6 +38,7 @@ import type {
 import {
   serializeAssistantCitation,
   withAssistantCitationComment,
+  withoutAssistantCitationContext,
 } from "@t3tools/shared/assistantCitations";
 import {
   COMPOSER_CONTEXT_CLIPBOARD_MIME,
@@ -2042,7 +2043,7 @@ function ComposerPromptEditorTiptapInner(
     const clipboardData = event.clipboardData;
     const { from, to } = editor.state.selection;
     if (from === to) return;
-    const text = serializeSelection(editor.state.doc, from, to);
+    const text = withoutAssistantCitationContext(serializeSelection(editor.state.doc, from, to));
     const contextIds = literalText ? [] : Array.from(new Set(collectInlineContextIds(text)));
     const fragment = contextIds.length > 0 ? build?.(contextIds) : null;
     event.preventDefault();

@@ -1,6 +1,7 @@
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, MessageId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
+import { collectAssistantCitations, serializeAssistantCitation } from "./assistantCitations.ts";
 import {
   buildNewThreadLink,
   parseNewThreadLink,
@@ -100,12 +101,41 @@ describe("link round trips", () => {
       provider: "claudeAgent",
       model: "opus",
     });
+    expect(link.startsWith("t3code://new?")).toBe(true);
     const path = promptLinkAppPath(link);
-    expect(path).toBe(new URL(link).pathname + new URL(link).search);
+    expect(path).toBe(`/new${new URL(link).search}`);
     const parsed = parseNewThreadLink(new URL(link).search);
     expect(parsed.ok && parsed.value.kind === "new" && parsed.value.prompt.text).toBe(
       "Swear count & rating?",
     );
+  });
+
+  it("keeps a quote's text and comment but not its unseen context", () => {
+    const quote = serializeAssistantCitation({
+      version: 1,
+      environmentId: EnvironmentId.make("env-1"),
+      threadId: ThreadId.make("thread-1"),
+      messageId: MessageId.make("message-1"),
+      text: "the visible sentence",
+      comment: "why",
+      start: 27,
+      end: 47,
+      prefix: "API_KEY=sk-secret then ",
+      suffix: " password: hunter2",
+    });
+    const link = buildNewThreadLink({ prompt: `${quote} fix this` });
+    const parsed = parseNewThreadLink(new URL(link).search);
+    const prompt = parsed.ok && parsed.value.kind === "new" ? parsed.value.prompt.text : "";
+    expect(link).not.toContain("secret");
+    expect(link).not.toContain("hunter2");
+    expect(collectAssistantCitations(prompt).map(({ citation }) => citation)).toEqual([
+      expect.objectContaining({
+        text: "the visible sentence",
+        comment: "why",
+        prefix: "",
+        suffix: "",
+      }),
+    ]);
   });
 
   it("opens a copied thread link in the app at that thread", () => {

@@ -48,6 +48,19 @@ func makeEditor(_ value: String, tokensJson: String = "[]") -> T3ComposerEditorV
   return view
 }
 
+// Copying a quote keeps its text and comment but not the unseen words around it.
+do {
+  let quote = "[Assistant quote](t3-citation://v1/env/thread/msg?text=hello&start=0&end=5&prefix=sk-secret+&suffix=+hunter2&comment=why)"
+  let view = makeEditor("See \(quote) at https://x.test/?prefix=keep", tokensJson: mention("hello", at: 4, source: quote))
+  view.editor.selectedRange = NSRange(location: 0, length: view.editor.attributedText.length)
+  view.editor.copy(nil)
+  let copied = T3ComposerClipboard.written ?? ""
+  check(
+    copied == "See [Assistant quote](t3-citation://v1/env/thread/msg?text=hello&start=0&end=5&prefix=&suffix=&comment=why) at https://x.test/?prefix=keep",
+    "Copy kept a quote's unseen context: \(copied)"
+  )
+}
+
 // A send clears the draft after an autocorrection the parent had not received yet.
 do {
   let view = makeEditor("hello wrold")
@@ -210,6 +223,9 @@ private final class ImmediateImageProvider: NSItemProvider {
     super.init()
     registerObject(image, visibility: .all)
   }
+
+  // Newer OS releases list HEIC first for a registered UIImage; keep this fixture on the object path.
+  override var registeredTypeIdentifiers: [String] { [UTType.image.identifier] }
 
   override func loadObject(
     ofClass aClass: NSItemProviderReading.Type,

@@ -26,7 +26,8 @@ final class EventDispatcher {
 enum T3ComposerClipboard {
   static func hasThreadLink(_ text: String) -> Bool { false }
   static func read() -> [String: String] { [:] }
-  static func write(text: String, fragment: String) {}
+  static var written: String?
+  static func write(text: String, fragment: String) { written = text }
 }
 """
 Path(sys.argv[2]).write_text(source + "\n" + stubs + "\n" + (module / "tests/ios/main.swift").read_text())

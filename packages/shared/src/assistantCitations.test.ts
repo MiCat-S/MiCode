@@ -18,7 +18,9 @@ import {
   parseAssistantCitationHref,
   renderAssistantCitationsAsText,
   serializeAssistantCitation,
+  serializeCopiedAssistantCitation,
   withAssistantCitationComment,
+  withoutAssistantCitationContext,
 } from "./assistantCitations.ts";
 
 const citation: AssistantCitation = {
@@ -253,6 +255,22 @@ describe("assistant citation references", () => {
 
     expect(assistantCitationsToPlainText("")).toBe("");
     expect(assistantCitationsToPlainText(prompt)).toBe(prompt);
+  });
+
+  it("drops only the unseen context from copied quotes", () => {
+    const commented = { ...citation, comment: "Keep this note." };
+    const href = formatAssistantCitationHref(citation);
+    const prompt = `Before ${serializeAssistantCitation(commented)} [Other quote](${href}) After`;
+    const copied = withoutAssistantCitationContext(prompt);
+
+    expect(copied).toBe(
+      `Before ${serializeCopiedAssistantCitation(commented)} [Other quote](${href}) After`,
+    );
+    expect(collectAssistantCitations(copied)[0]?.citation).toStrictEqual({
+      ...commented,
+      prefix: "",
+      suffix: "",
+    });
   });
 
   it("renders escaped user comments outside the assistant quote block", () => {

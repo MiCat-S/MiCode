@@ -18,6 +18,7 @@ import { useQuietThreadShell } from "../../state/entities";
 import { useEnvironment } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
+import { withoutAssistantCitationContext } from "@t3tools/shared/assistantCitations";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 import { memo, use, useState, type ReactNode } from "react";
 import {
@@ -373,7 +374,7 @@ function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mess
               {typeof revertTurnCount === "number" && (
                 <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />
               )}
-              <MessageCopyButton text={text} variant="ghost" />
+              <MessageCopyButton text={withoutAssistantCitationContext(text)} variant="ghost" />
               {promptLink !== null && (
                 <MessageCopyButton
                   text={promptLink}
@@ -876,7 +877,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         )}
         {copyText && (
           <MessageCopyButton
-            text={contextClipboardFragment ? copyText : plainText}
+            text={withoutAssistantCitationContext(contextClipboardFragment ? copyText : plainText)}
             {...(contextClipboardFragment
               ? {
                   extraFlavors: {

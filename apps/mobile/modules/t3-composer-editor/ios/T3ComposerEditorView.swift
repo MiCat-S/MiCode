@@ -46,6 +46,26 @@ private enum ComposerEnterBehavior: String {
   case newline
 }
 
+/// Copies can leave the app, so a quote keeps its text and comment but not the unseen words around it
+/// (withoutAssistantCitationContext in packages/shared/src/assistantCitations.ts).
+private func withoutQuoteContext(_ text: String) -> String {
+  var result = ""
+  var rest = text[...]
+  while let quote = rest.range(
+    of: #"\[Assistant quote\]\(t3-citation://v1/[^\s)]+\)"#,
+    options: .regularExpression
+  ) {
+    result += rest[..<quote.lowerBound]
+    result += rest[quote].replacingOccurrences(
+      of: #"([?&](?:prefix|suffix)=)[^&)]*"#,
+      with: "$1",
+      options: .regularExpression
+    )
+    rest = rest[quote.upperBound...]
+  }
+  return result + rest
+}
+
 private final class ComposerTextAttachment: NSTextAttachment {
   let token: ComposerTokenPayload
   var source: String { token.source }
@@ -361,7 +381,10 @@ private final class ComposerTextView: UITextView {
     guard selectedRange.length > 0 else {
       return super.copy(sender)
     }
-    T3ComposerClipboard.write(text: serializedText(in: selectedRange), fragment: clipboardFragment)
+    T3ComposerClipboard.write(
+      text: withoutQuoteContext(serializedText(in: selectedRange)),
+      fragment: clipboardFragment
+    )
   }
 
   override func cut(_ sender: Any?) {

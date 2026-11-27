@@ -553,6 +553,14 @@ internal fun singleLineContentWidth(layout: Layout?): Int =
 
 private fun Int.withAlpha(alpha: Int): Int = (this and 0x00FFFFFF) or (alpha shl 24)
 
+private val copiedQuote = Regex("""\[Assistant quote\]\(t3-citation://v1/[^\s)]+\)""")
+private val quoteContext = Regex("""([?&](?:prefix|suffix)=)[^&)]*""")
+
+// Copies can leave the app, so a quote keeps its text and comment but not the unseen words around
+// it (withoutAssistantCitationContext in packages/shared/src/assistantCitations.ts).
+internal fun withoutQuoteContext(text: String): String =
+  copiedQuote.replace(text) { quote -> quoteContext.replace(quote.value, "\$1") }
+
 private fun Context.resolveThemeColor(attribute: Int, fallback: Int): Int {
   val value = TypedValue()
   return if (theme.resolveAttribute(attribute, value, true)) value.data else fallback
@@ -902,8 +910,11 @@ internal class SelectionAwareEditText(
   private fun copyContext(cut: Boolean): Boolean {
     val start = minOf(selectionStart, selectionEnd).coerceAtLeast(0)
     val end = maxOf(selectionStart, selectionEnd).coerceAtMost(length())
-    if (end <= start || clipboardFragment.isEmpty()) return false
-    T3ComposerClipboard.write(context, text.substring(start, end), clipboardFragment)
+    if (end <= start) return false
+    val selected = text.substring(start, end)
+    val copied = withoutQuoteContext(selected)
+    if (clipboardFragment.isEmpty() && copied == selected) return false
+    T3ComposerClipboard.write(context, copied, clipboardFragment)
     if (cut) text.delete(start, end)
     return true
   }

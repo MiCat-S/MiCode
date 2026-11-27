@@ -1,3 +1,4 @@
+import { withoutAssistantCitationContext } from "./assistantCitations.ts";
 import { DEFAULT_HOSTED_APP_URL } from "./connectAuth.ts";
 import { parseUrl } from "./url.ts";
 
@@ -189,15 +190,15 @@ export function withoutPromptLinkParams(search: string): string {
   return rest ? `?${rest}` : "";
 }
 
+/** MI Code has no hosted web app, so links open the installed app instead of a public web page. */
 export function buildNewThreadLink(input: {
   readonly prompt: string;
   readonly repository?: PromptLinkRepository | null;
   readonly provider?: string | null;
   readonly model?: string | null;
-  readonly origin?: string;
 }): string {
-  const url = new URL("/new", input.origin ?? DEFAULT_HOSTED_APP_URL);
-  url.searchParams.set("prompt", input.prompt);
+  const url = new URL("t3code://new");
+  url.searchParams.set("prompt", withoutAssistantCitationContext(input.prompt));
   if (input.repository) {
     url.searchParams.set("repo", `${input.repository.owner}/${input.repository.name}`);
   }
