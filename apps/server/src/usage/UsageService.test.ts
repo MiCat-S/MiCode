@@ -140,7 +140,9 @@ const WINDOW: UsageSummaryInput = {
 
 const setup = Effect.gen(function* () {
   const home = yield* Effect.promise(() =>
-    NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "usage-service-test-")),
+    NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "usage-service-test-")).then((path) =>
+      NodeFSP.realpath(path),
+    ),
   );
   yield* Effect.addFinalizer(() =>
     Effect.promise(() => NodeFSP.rm(home, { recursive: true, force: true })),
@@ -216,7 +218,21 @@ const layerService = (input: {
     Layer.provideMerge(Layer.succeed(HostProcess.Platform, input.platform ?? "linux")),
     Layer.provideMerge(Layer.succeed(HostProcess.Hostname, input.hostname ?? "usage-test-host")),
     Layer.provideMerge(Layer.succeed(HostProcess.HomeDirectory, input.home)),
-    Layer.provideMerge(ServerSettings.layerTest(input.settings)),
+    Layer.provideMerge(
+      ServerSettings.layerTest({
+        providerUsageEnabled: true,
+        ...input.settings,
+        providerInstances: {
+          ...Object.fromEntries(
+            ["pi", "muse", "opencode", "antigravity", "cursor", "grok"].map((driver) => [
+              driver,
+              { driver: ProviderDriverKind.make(driver), enabled: true },
+            ]),
+          ),
+          ...input.settings?.providerInstances,
+        },
+      }),
+    ),
     Layer.provideMerge(
       Layer.succeed(
         HttpClient.HttpClient,
@@ -526,6 +542,40 @@ describe("Codex usage history", () => {
 });
 
 describe("UsageService", () => {
+  it.effect("requires an explicit opt-in before scanning provider usage", () =>
+    Effect.gen(function* () {
+      const { home, transcript, settings } = yield* setup;
+      yield* Effect.promise(() => NodeFSP.writeFile(transcript, claudeLine(1, 5)));
+      yield* Effect.gen(function* () {
+        const usage = yield* UsageService.make;
+        const error = yield* Effect.flip(usage.readSummary(WINDOW));
+        assert.include(error.detail, "Turn on Read provider usage");
+
+        const serverSettings = yield* ServerSettings.ServerSettingsService;
+        yield* serverSettings.updateSettings({ providerUsageEnabled: true });
+        assert.strictEqual(totalOutputTokens(yield* usage.readSummary(WINDOW)), 5);
+        yield* serverSettings.updateSettings({
+          providerInstances: {
+            ...settings.providerInstances,
+            [ProviderInstanceId.make("claudeAgent")]: {
+              driver: ProviderDriverKind.make("claudeAgent"),
+              enabled: false,
+            },
+          },
+        });
+        assert.strictEqual(totalOutputTokens(yield* usage.readSummary(WINDOW)), 0);
+      }).pipe(
+        Effect.provide(
+          layerService({
+            prefix: "usage-opt-in",
+            home,
+            settings: { ...settings, providerUsageEnabled: false },
+          }),
+        ),
+      );
+    }),
+  );
+
   it.effect("keeps pricing metadata paired with the rates used during a concurrent refresh", () =>
     Effect.gen(function* () {
       const { home, settings } = yield* setup;
@@ -1500,11 +1550,11 @@ describe("UsageService", () => {
                   ...settings.providerInstances,
                   [ProviderInstanceId.make("muse")]: {
                     driver: ProviderDriverKind.make("muse"),
-                    enabled: false,
+                    enabled: true,
                   },
                   [ProviderInstanceId.make("muse-alias")]: {
                     driver: ProviderDriverKind.make("muse"),
-                    enabled: false,
+                    enabled: true,
                   },
                 },
               },
@@ -1567,7 +1617,7 @@ describe("UsageService", () => {
                 ...settings.providerInstances,
                 [ProviderInstanceId.make("muse")]: {
                   driver: ProviderDriverKind.make("muse"),
-                  enabled: false,
+                  enabled: true,
                 },
               },
             },
@@ -1760,6 +1810,7 @@ describe("UsageService", () => {
                         ...settings.providerInstances,
                         [ProviderInstanceId.make("pi")]: {
                           driver: ProviderDriverKind.make("pi"),
+                          enabled: true,
                           config: launchArgs === undefined ? {} : { launchArgs },
                           environment:
                             instanceHome === undefined
@@ -2280,10 +2331,12 @@ describe("UsageService", () => {
                 ...settings.providerInstances,
                 [ProviderInstanceId.make("cursor")]: {
                   driver: ProviderDriverKind.make("cursor"),
+                  enabled: true,
                   environment: [{ name: "CURSOR_API_KEY", value: "first-key", sensitive: true }],
                 },
                 [ProviderInstanceId.make("cursor-work")]: {
                   driver: ProviderDriverKind.make("cursor"),
+                  enabled: true,
                   environment: [{ name: "CURSOR_API_KEY", value: "second-key", sensitive: true }],
                 },
               },
@@ -2431,6 +2484,7 @@ describe("UsageService", () => {
                 ...settings.providerInstances,
                 [ProviderInstanceId.make("opencode-work")]: {
                   driver: ProviderDriverKind.make("opencode"),
+                  enabled: true,
                   environment: [
                     {
                       name: "OPENCODE_DATA_DIR",
@@ -2441,6 +2495,7 @@ describe("UsageService", () => {
                 },
                 [ProviderInstanceId.make("opencode-xdg")]: {
                   driver: ProviderDriverKind.make("opencode"),
+                  enabled: true,
                   environment: [{ name: "OPENCODE_DATA_DIR", value: "", sensitive: false }],
                 },
               },
@@ -2561,6 +2616,7 @@ describe("UsageService", () => {
       });
       const instance = (dataDir: string) => ({
         driver: ProviderDriverKind.make("antigravity"),
+        enabled: true,
         environment: [{ name: "ANTIGRAVITY_DATA_DIR", value: dataDir, sensitive: false }],
       });
       const service = yield* UsageService.make.pipe(
@@ -2653,7 +2709,7 @@ describe("UsageService", () => {
     }),
   );
 
-  it.effect("keeps Antigravity history from a removed instance's T3-managed profile", () =>
+  it.effect("ignores Antigravity history from a removed instance's T3-managed profile", () =>
     Effect.gen(function* () {
       const { settings, home } = yield* setup;
       const prefix = "usage-service-antigravity-removed-profile-test";
@@ -2696,13 +2752,13 @@ describe("UsageService", () => {
           summary.buckets
             .filter((bucket) => bucket.provider === "antigravity" && bucket.sourcePath === root)
             .reduce((sum, bucket) => sum + bucket.totals.outputTokens, 0),
-          7,
+          0,
         );
       }).pipe(Effect.provide(layerService({ prefix, home, settings })));
     }),
   );
 
-  it.effect("reads configured and disabled accounts once across shared and aliased homes", () =>
+  it.effect("reads enabled accounts once across shared and aliased homes", () =>
     Effect.gen(function* () {
       const { transcript, settings, home } = yield* setup;
       const codexHome = NodePath.join(home, "codex-account");
@@ -2784,6 +2840,7 @@ describe("UsageService", () => {
                 },
                 [ProviderInstanceId.make("grok-work")]: {
                   driver: ProviderDriverKind.make("grok"),
+                  enabled: true,
                   config: { customModels: "not-a-list" },
                   environment: [{ name: "GROK_HOME", value: grokHome, sensitive: false }],
                 },
@@ -2793,7 +2850,7 @@ describe("UsageService", () => {
         ),
       );
       const summary = yield* service.readSummary(WINDOW);
-      assert.strictEqual(totalOutputTokens(summary), 59);
+      assert.strictEqual(totalOutputTokens(summary), 52);
       yield* Effect.promise(() =>
         NodeFSP.rename(
           NodePath.join(codexHome, "sessions", "rollout.jsonl"),
@@ -2809,10 +2866,10 @@ describe("UsageService", () => {
       assert.deepStrictEqual(removed.buckets, summary.buckets);
 
       const sources = summary.sources.filter((source) => source.status === "ok");
-      assert.strictEqual(sources.length, 4);
+      assert.strictEqual(sources.length, 3);
       assert.strictEqual(
         sources.reduce((sum, source) => sum + source.scannedFiles, 0),
-        4,
+        3,
       );
       assert.strictEqual(
         sources.filter((source) => source.fingerprint.provider === "codex").length,
@@ -2821,7 +2878,7 @@ describe("UsageService", () => {
     }),
   );
 
-  it.effect("keeps default-home history after the default account moves to a custom home", () =>
+  it.effect("uses the configured home after the default account moves", () =>
     Effect.gen(function* () {
       const { transcript, settings, home } = yield* setup;
       const defaultHome = NodePath.join(home, "default-claude");
@@ -2845,7 +2902,7 @@ describe("UsageService", () => {
           }),
         ),
       );
-      assert.strictEqual(totalOutputTokens(summary), 12);
+      assert.strictEqual(totalOutputTokens(summary), 5);
     }),
   );
 

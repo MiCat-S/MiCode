@@ -34,7 +34,7 @@ export class TextGenerators extends Context.Service<
     /** The runner for a text generator id, or undefined when the id names no text generator. */
     readonly runner: (
       id: ProviderInstanceId,
-    ) => Effect.Effect<TextGenerationOperations.Runner | undefined>;
+    ) => Effect.Effect<TextGenerationOperations.Runner | undefined, TextGenerationError>;
     readonly listModels: (
       input: ListTextGeneratorModelsInput,
     ) => Effect.Effect<ListTextGeneratorModelsResult, TextGeneratorError>;
@@ -107,7 +107,16 @@ export const make = Effect.gen(function* () {
     };
 
   const runner = Effect.fn("TextGenerators.runner")(function* (id: ProviderInstanceId) {
-    const config = yield* readConfig(id).pipe(Effect.orElseSucceed(() => undefined));
+    const config = yield* readConfig(id).pipe(
+      Effect.mapError(
+        (cause) =>
+          new TextGenerationError({
+            operation: "resolveTextGenerator",
+            detail: cause.detail,
+            cause,
+          }),
+      ),
+    );
     if (config === undefined) return undefined;
     const label = generatorLabel(config);
     if (!config.enabled) {

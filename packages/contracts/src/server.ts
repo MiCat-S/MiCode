@@ -454,10 +454,12 @@ export const TRIAGE_PROMPT_FILE_NAME = "triage-playbook.md";
 
 export class ServerPrepareTriageError extends Schema.TaggedError<ServerPrepareTriageError>()(
   "ServerPrepareTriageError",
-  { cause: Schema.optional(Schema.Defect()) },
+  { cause: Schema.optional(Schema.Defect()), disabled: Schema.optional(Schema.Boolean) },
 ) {
   override get message(): string {
-    return "Could not write the triage session files.";
+    return this.disabled
+      ? "Issue triage is unavailable in MI Code."
+      : "Could not write the triage session files.";
   }
 }
 

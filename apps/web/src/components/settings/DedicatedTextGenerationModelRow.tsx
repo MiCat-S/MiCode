@@ -1,4 +1,4 @@
-import type { ModelSelection, ServerProvider, ServerSettings } from "@t3tools/contracts";
+import type { ModelSelection, ServerSettings } from "@t3tools/contracts";
 import { createModelSelection, pickModelSelection } from "@t3tools/shared/model";
 import { T } from "gt-react";
 
@@ -30,10 +30,7 @@ type DedicatedModelSettingKey =
 export function DedicatedTextGenerationModelRow(props: {
   settingKey: DedicatedModelSettingKey;
   searchId: SettingsSearchItemId;
-  resolveSelection: (
-    settings: ServerSettings,
-    providers: ReadonlyArray<ServerProvider>,
-  ) => ModelSelection;
+  resolveSelection: (settings: ServerSettings) => ModelSelection;
   title: string;
   description: string;
   switchLabel: string;
@@ -63,7 +60,7 @@ export function DedicatedTextGenerationModelRow(props: {
   const selection = resolveAppModelSelectionState(
     {
       ...settings,
-      textGenerationModelSelection: props.resolveSelection(settings, textGenerationProviders),
+      textGenerationModelSelection: props.resolveSelection(settings),
     },
     textGenerationProviders,
   );

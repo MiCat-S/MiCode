@@ -495,6 +495,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: [msg("usage quota rate limit reset wake recover continue")],
   },
   {
+    id: "read-provider-usage",
+    title: msg("Read provider usage"),
+    to: "/settings/threads",
+    environmentOnly: true,
+  },
+  {
     id: "auto-resume-limited-threads",
     title: msg("Resume after usage limits"),
     to: "/settings/threads",

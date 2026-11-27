@@ -1,25 +1,11 @@
 import type { ModelPreferences } from "@t3tools/contracts/settings";
 import {
-  DEFAULT_MODEL_BY_PROVIDER,
-  DEFAULT_TEXT_GENERATION_MODEL,
-  DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER,
-  defaultInstanceIdForDriver,
   globalIdleCompaction,
-  type IdleCompactionMode,
-  isProviderAvailable,
-  isUnconfiguredDefaultInstanceEnabled,
-  resolveProjectProviderInstanceEnabled,
-  resolveProviderInstanceEnabled,
   resolveTextGenerationSelectionEnabled,
-  textGeneratorForSelection,
-  isProviderTextGenerationCapable,
+  type IdleCompactionMode,
   type ModelSelection,
-  type ProjectId,
   type ProjectScopedServerSettingKey,
   ProjectSettingsOverrides,
-  ProviderDriverKind,
-  ProviderInstanceId,
-  type ServerProvider,
   ServerSettings,
   type ServerSettingsPatch,
   withIdleCompaction,
@@ -29,7 +15,7 @@ import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 import { deepMerge } from "./Struct.ts";
 import { fromLenientJson } from "./schemaJson.ts";
-import { createModelSelection, readCustomModelEntries } from "./model.ts";
+import { createModelSelection } from "./model.ts";
 import {
   getBackgroundActivityBaseProfile,
   normalizeBackgroundActivitySettings,
@@ -49,151 +35,25 @@ export function isModelSelectionProviderEnabled(
   settings: ServerSettings,
   selection: ModelSelection,
 ): boolean {
-  const generator = textGeneratorForSelection(settings, selection.instanceId);
-  if (generator !== undefined) return generator.enabled;
-  const instanceConfig = Object.hasOwn(settings.providerInstances, selection.instanceId)
-    ? settings.providerInstances[selection.instanceId]
-    : undefined;
-  if (instanceConfig !== undefined) {
-    return resolveProviderInstanceEnabled(instanceConfig);
-  }
-
-  return isUnconfiguredDefaultInstanceEnabled(selection.instanceId);
+  return resolveTextGenerationSelectionEnabled(settings, null, selection.instanceId);
 }
 
-const TEXT_GENERATION_FALLBACK_DRIVERS = [
-  "codex",
-  "claudeAgent",
-  "cursor",
-  "grok",
-  "muse",
-  "pi",
-  "opencode",
-  "antigravity",
-].map((driver) => ProviderDriverKind.make(driver));
-
-/** Configured instances come after every default instance, so they only win when no default qualifies. */
-export function fallbackTextGenerationModelSelection(
-  providerInstances: ServerSettings["providerInstances"],
-  isEnabled: (instanceId: ProviderInstanceId, driver: ProviderDriverKind, model: string) => boolean,
-  options?: { readonly defaultModelSelection?: ModelSelection | null },
-): ModelSelection | null {
-  const threadDefault = options?.defaultModelSelection;
-  // The thread default's custom model wins on its instance; the driver default still serves when that model is unusable.
-  const selectionsFor = (instanceId: ProviderInstanceId, driver: ProviderDriverKind) => {
-    const config = providerInstances[instanceId]?.config as { customModels?: unknown } | undefined;
-    const driverDefault = { instanceId, model: defaultTextGenerationModel(driver) };
-    return threadDefault?.instanceId === instanceId &&
-      readCustomModelEntries(config?.customModels).some(
-        (entry) => entry.slug === threadDefault.model,
-      )
-      ? [threadDefault, driverDefault]
-      : [driverDefault];
-  };
-  const candidates = [
-    ...TEXT_GENERATION_FALLBACK_DRIVERS.map(
-      (driver) => [defaultInstanceIdForDriver(driver), driver] as const,
-    ),
-    ...Object.entries(providerInstances).flatMap(([instanceId, instance]) =>
-      TEXT_GENERATION_FALLBACK_DRIVERS.includes(instance.driver)
-        ? [[ProviderInstanceId.make(instanceId), instance.driver] as const]
-        : [],
-    ),
-  ];
-  for (const [instanceId, driver] of candidates) {
-    for (const selection of selectionsFor(instanceId, driver)) {
-      if (isEnabled(instanceId, driver, selection.model)) return selection;
-    }
-  }
-  return null;
+export function resolveSourceControlWriterModelSelection(settings: ServerSettings): ModelSelection {
+  return settings.sourceControlWriterModelSelection ?? settings.textGenerationModelSelection;
 }
 
-function defaultTextGenerationModel(driver: ProviderDriverKind): string {
-  return (
-    DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER[driver] ??
-    DEFAULT_MODEL_BY_PROVIDER[driver] ??
-    DEFAULT_TEXT_GENERATION_MODEL
-  );
+export function resolveReviewGuideModelSelection(settings: ServerSettings): ModelSelection {
+  return settings.reviewGuideModelSelection ?? resolveSourceControlWriterModelSelection(settings);
 }
 
-/** A text generator, or a provider whose snapshot can generate text; no snapshots trusts settings. */
-function isTextGenerationTargetUsable(
-  settings: ServerSettings,
-  providers: ReadonlyArray<ServerProvider> | undefined,
-  instanceId: ProviderInstanceId,
-): boolean {
-  if (providers === undefined || textGeneratorForSelection(settings, instanceId) !== undefined) {
-    return true;
-  }
-  const provider = providers.find((candidate) => candidate.instanceId === instanceId);
-  return (
-    provider?.enabled === true &&
-    isProviderAvailable(provider) &&
-    isProviderTextGenerationCapable(provider)
-  );
-}
-
-export function resolveSourceControlWriterModelSelection(
-  settings: ServerSettings,
-  providers: ReadonlyArray<ServerProvider> | undefined,
-  projectId: ProjectId | null,
-): ModelSelection {
-  const selection = settings.sourceControlWriterModelSelection;
-  return selection &&
-    resolveTextGenerationSelectionEnabled(settings, projectId, selection.instanceId) &&
-    isTextGenerationTargetUsable(settings, providers, selection.instanceId)
-    ? selection
-    : settings.textGenerationModelSelection;
-}
-
-export function resolveReviewGuideModelSelection(
-  settings: ServerSettings,
-  providers: ReadonlyArray<ServerProvider> | undefined,
-  projectId: ProjectId | null,
-): ModelSelection {
-  const selection = settings.reviewGuideModelSelection;
-  // Text generators cannot investigate a checkout, so they never write review guides.
-  return selection &&
-    textGeneratorForSelection(settings, selection.instanceId) === undefined &&
-    resolveProjectProviderInstanceEnabled(settings, projectId, selection.instanceId) &&
-    isTextGenerationTargetUsable(settings, providers, selection.instanceId)
-    ? selection
-    : resolveSourceControlWriterModelSelection(settings, providers, projectId);
-}
-
-/** Transcript cleanup follows the text generation model unless its own usable model is set. */
 export function resolveSpeechPostProcessingModelSelection(
   settings: ServerSettings,
-  providers?: ReadonlyArray<ServerProvider>,
 ): ModelSelection {
-  return resolveTextGenerationOverride(
-    settings,
-    settings.speechPostProcessingModelSelection,
-    providers,
-  );
+  return settings.speechPostProcessingModelSelection ?? settings.textGenerationModelSelection;
 }
 
-export function resolvePromptEnhancementModelSelection(
-  settings: ServerSettings,
-  providers?: ReadonlyArray<ServerProvider>,
-): ModelSelection {
-  return resolveTextGenerationOverride(
-    settings,
-    settings.promptEnhancementModelSelection,
-    providers,
-  );
-}
-
-function resolveTextGenerationOverride(
-  settings: ServerSettings,
-  selection: ModelSelection | null,
-  providers: ReadonlyArray<ServerProvider> | undefined,
-): ModelSelection {
-  return selection &&
-    isModelSelectionProviderEnabled(settings, selection) &&
-    isTextGenerationTargetUsable(settings, providers, selection.instanceId)
-    ? selection
-    : settings.textGenerationModelSelection;
+export function resolvePromptEnhancementModelSelection(settings: ServerSettings): ModelSelection {
+  return settings.promptEnhancementModelSelection ?? settings.textGenerationModelSelection;
 }
 
 export interface PersistedServerObservabilitySettings {

@@ -8,7 +8,6 @@ import {
   ServerSettings,
   ServerSettingsPatch,
   UsageLimitSourceId,
-  type ServerProvider,
 } from "@t3tools/contracts";
 import * as Duration from "effect/Duration";
 import * as Schema from "effect/Schema";
@@ -18,7 +17,6 @@ import { createModelSelection } from "./model.ts";
 import { resolveProjectScripts } from "./projectScripts.ts";
 import {
   applyServerSettingsPatch,
-  fallbackTextGenerationModelSelection,
   modelPreferencesMigrationPatch,
   resolveModelPreferences,
   isModelSelectionProviderEnabled,
@@ -33,32 +31,7 @@ const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 
 const FOLDED_SERVER_SETTINGS = { ...DEFAULT_SERVER_SETTINGS, projectSettingsFolded: true };
 
-describe("fallbackTextGenerationModelSelection", () => {
-  it("uses Big Pickle when only OpenCode is enabled", () => {
-    expect(
-      fallbackTextGenerationModelSelection({}, (instanceId) => instanceId === "opencode"),
-    ).toEqual({ instanceId: "opencode", model: "opencode/big-pickle" });
-    const threadDefault = {
-      instanceId: ProviderInstanceId.make("opencode"),
-      model: "opencode-go/glm-5.3",
-    };
-    const providerInstances = {
-      [threadDefault.instanceId]: {
-        driver: ProviderDriverKind.make("opencode"),
-        config: { customModels: [threadDefault.model] },
-      },
-    };
-    // An exhausted Go quota leaves the custom model unusable but Big Pickle still works.
-    expect(
-      fallbackTextGenerationModelSelection(
-        providerInstances,
-        (instanceId, _driver, model) =>
-          instanceId === "opencode" && !model.startsWith("opencode-go/"),
-        { defaultModelSelection: threadDefault },
-      ),
-    ).toEqual({ instanceId: "opencode", model: "opencode/big-pickle" });
-  });
-
+describe("fallbackModelSelection", () => {
   it("replaces and clears the fallback without carrying model options", () => {
     const fallbackModelSelection = { instanceId: ProviderInstanceId.make("codex"), model: "new" };
     const settings = applyServerSettingsPatch(
@@ -76,17 +49,6 @@ describe("fallbackTextGenerationModelSelection", () => {
     expect(
       applyServerSettingsPatch(settings, { fallbackModelSelection: null }).fallbackModelSelection,
     ).toBeNull();
-  });
-  it("falls back to a configured non-default instance", () => {
-    const configured = ProviderInstanceId.make("codex_work");
-    const providerInstances = {
-      [configured]: { driver: ProviderDriverKind.make("codex"), config: {} },
-    };
-    const fallback = fallbackTextGenerationModelSelection(
-      providerInstances,
-      (instanceId) => instanceId === configured,
-    );
-    expect(fallback?.instanceId).toBe(configured);
   });
 });
 
@@ -353,193 +315,22 @@ describe("serverSettings helpers", () => {
     });
   });
 
-  it("falls back from a disabled source control writer provider without clearing its selection", () => {
+  it("preserves explicit text generation choices even when the target is disabled", () => {
     const instanceId = ProviderInstanceId.make("codex_writer");
-    const sourceControlWriterModelSelection = createModelSelection(instanceId, "gpt-5.4-mini");
-    const settings = {
-      ...DEFAULT_SERVER_SETTINGS,
-      providerInstances: {
-        [instanceId]: {
-          driver: ProviderDriverKind.make("codex"),
-          enabled: false,
-          config: {},
-        },
-      },
-      sourceControlWriterModelSelection,
-    };
-
-    expect(isModelSelectionProviderEnabled(settings, sourceControlWriterModelSelection)).toBe(
-      false,
-    );
-    expect(resolveSourceControlWriterModelSelection(settings, undefined, null)).toBe(
-      settings.textGenerationModelSelection,
-    );
-    expect(settings.sourceControlWriterModelSelection).toBe(sourceControlWriterModelSelection);
-  });
-
-  it("falls back from a removed instance whose id matches an inherited object key", () => {
-    for (const id of ["constructor", "toString", "valueOf"]) {
-      const speechPostProcessingModelSelection = createModelSelection(
-        ProviderInstanceId.make(id),
-        "gpt-5.4-mini",
-      );
-      const settings = { ...DEFAULT_SERVER_SETTINGS, speechPostProcessingModelSelection };
-
-      expect(isModelSelectionProviderEnabled(settings, speechPostProcessingModelSelection)).toBe(
-        false,
-      );
-      expect(resolveSpeechPostProcessingModelSelection(settings)).toBe(
-        settings.textGenerationModelSelection,
-      );
-    }
-  });
-
-  it("falls back from a writer provider that cannot generate application text", () => {
-    const instanceId = ProviderInstanceId.make("acp_writer");
-    const sourceControlWriterModelSelection = createModelSelection(instanceId, "default");
-    const settings = {
-      ...DEFAULT_SERVER_SETTINGS,
-      providerInstances: {
-        [instanceId]: {
-          driver: ProviderDriverKind.make("acpRegistry"),
-          enabled: true,
-          config: {},
-        },
-      },
-      sourceControlWriterModelSelection,
-    };
-    const incapableProvider = {
-      instanceId,
-      driver: ProviderDriverKind.make("acpRegistry"),
-      supportsTextGeneration: false,
-      enabled: true,
-      installed: true,
-      version: null,
-      status: "ready",
-      auth: { status: "authenticated" },
-      checkedAt: "2026-07-27T00:00:00.000Z",
-      models: [],
-      slashCommands: [],
-      skills: [],
-    } satisfies ServerProvider;
-
-    expect(resolveSourceControlWriterModelSelection(settings, [incapableProvider], null)).toBe(
-      settings.textGenerationModelSelection,
-    );
-    expect(settings.sourceControlWriterModelSelection).toBe(sourceControlWriterModelSelection);
-  });
-
-  it("routes every text task but review guides to a text generator, until it is turned off", () => {
-    const generatorId = ProviderInstanceId.make("openrouter");
-    const selection = createModelSelection(generatorId, "openai/gpt-5-mini");
-    const settings = (enabled: boolean) => ({
-      ...DEFAULT_SERVER_SETTINGS,
-      textGenerators: {
-        [generatorId]: {
-          kind: "openaiCompatible" as const,
-          baseUrl: "https://openrouter.ai/api/v1",
-          apiKey: "",
-          enabled,
-        },
-      },
-      sourceControlWriterModelSelection: selection,
-      reviewGuideModelSelection: selection,
-      speechPostProcessingModelSelection: selection,
-    });
-    // A text generator has no provider snapshot; an empty list must not read as unusable.
-    const on = settings(true);
-    expect(resolveSourceControlWriterModelSelection(on, [], null)).toBe(selection);
-    expect(resolveSpeechPostProcessingModelSelection(on, [])).toBe(selection);
-    expect(resolveReviewGuideModelSelection(on, [], null)).toBe(selection);
-    expect(
-      resolveReviewGuideModelSelection(
-        { ...on, sourceControlWriterModelSelection: null },
-        [],
-        null,
-      ),
-    ).toBe(on.textGenerationModelSelection);
-
-    const off = settings(false);
-    expect(resolveSourceControlWriterModelSelection(off, [], null)).toBe(
-      off.textGenerationModelSelection,
-    );
-    expect(resolveSpeechPostProcessingModelSelection(off, [])).toBe(
-      off.textGenerationModelSelection,
-    );
-  });
-
-  it("falls back from a writer provider a project turned off, keeping it for other projects", () => {
-    const instanceId = ProviderInstanceId.make("codex_writer");
-    const projectId = ProjectId.make("project-a");
-    const sourceControlWriterModelSelection = createModelSelection(instanceId, "gpt-5.4-mini");
-    const settings = {
-      ...DEFAULT_SERVER_SETTINGS,
-      providerInstances: {
-        [instanceId]: { driver: ProviderDriverKind.make("codex"), enabled: true, config: {} },
-      },
-      projectSettingsOverrides: {
-        [projectId]: { providerInstances: { [instanceId]: { enabled: false } } },
-      },
-      sourceControlWriterModelSelection,
-    };
-    const provider = {
-      instanceId,
-      driver: ProviderDriverKind.make("codex"),
-      enabled: true,
-      installed: true,
-      version: null,
-      status: "ready",
-      auth: { status: "authenticated" },
-      checkedAt: "2026-07-27T00:00:00.000Z",
-      availability: "available",
-      models: [],
-      slashCommands: [],
-      skills: [],
-    } satisfies ServerProvider;
-
-    expect(resolveSourceControlWriterModelSelection(settings, [provider], projectId)).toBe(
-      settings.textGenerationModelSelection,
-    );
-    expect(resolveSourceControlWriterModelSelection(settings, [provider], null)).toBe(
-      sourceControlWriterModelSelection,
-    );
-  });
-
-  it("keeps a writer on an instance the project turned on while the machine has it off", () => {
-    const instanceId = ProviderInstanceId.make("codex_writer");
-    const projectId = ProjectId.make("project-a");
-    const sourceControlWriterModelSelection = createModelSelection(instanceId, "gpt-5.4-mini");
+    const selection = createModelSelection(instanceId, "gpt-5.4-mini");
     const settings = {
       ...DEFAULT_SERVER_SETTINGS,
       providerInstances: {
         [instanceId]: { driver: ProviderDriverKind.make("codex"), enabled: false, config: {} },
       },
-      projectSettingsOverrides: {
-        [projectId]: { providerInstances: { [instanceId]: { enabled: true } } },
-      },
-      sourceControlWriterModelSelection,
+      sourceControlWriterModelSelection: selection,
+      reviewGuideModelSelection: selection,
+      speechPostProcessingModelSelection: selection,
     };
-    const provider = {
-      instanceId,
-      driver: ProviderDriverKind.make("codex"),
-      enabled: true,
-      installed: true,
-      version: null,
-      status: "ready",
-      auth: { status: "authenticated" },
-      checkedAt: "2026-07-27T00:00:00.000Z",
-      availability: "available",
-      models: [],
-      slashCommands: [],
-      skills: [],
-    } satisfies ServerProvider;
-
-    expect(resolveSourceControlWriterModelSelection(settings, [provider], projectId)).toBe(
-      sourceControlWriterModelSelection,
-    );
-    expect(resolveSourceControlWriterModelSelection(settings, [provider], null)).toBe(
-      settings.textGenerationModelSelection,
-    );
+    expect(isModelSelectionProviderEnabled(settings, selection)).toBe(false);
+    expect(resolveSourceControlWriterModelSelection(settings)).toBe(selection);
+    expect(resolveReviewGuideModelSelection(settings)).toBe(selection);
+    expect(resolveSpeechPostProcessingModelSelection(settings)).toBe(selection);
   });
 
   it("replaces providerInstances maps so omitted instance fields are cleared", () => {
@@ -1058,7 +849,7 @@ describe("synchronized model preferences", () => {
 });
 
 describe("resolveSpeechPostProcessingModelSelection", () => {
-  it("follows the text generation model until a usable cleanup model is set", () => {
+  it("follows the text generation model until a dedicated cleanup model is set", () => {
     const textGeneration = createModelSelection(ProviderInstanceId.make("codex"), "gpt-6-luna");
     const cleanup = createModelSelection(ProviderInstanceId.make("claudeAgent"), "claude-haiku", [
       { id: "effort", value: "low" },
@@ -1078,17 +869,7 @@ describe("resolveSpeechPostProcessingModelSelection", () => {
           },
         },
       }),
-    ).toBe(textGeneration);
-    expect(
-      resolveSpeechPostProcessingModelSelection(pinned, [
-        {
-          instanceId: "claudeAgent",
-          enabled: true,
-          installed: true,
-          supportsTextGeneration: false,
-        },
-      ] as never),
-    ).toBe(textGeneration);
+    ).toEqual(cleanup);
     expect(
       applyServerSettingsPatch(pinned, { speechPostProcessingModelSelection: null })
         .speechPostProcessingModelSelection,

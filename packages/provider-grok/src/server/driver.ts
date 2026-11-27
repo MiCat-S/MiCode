@@ -44,6 +44,7 @@ import {
 import {
   haveProviderSnapshotSettingsChanged,
   makeProviderSnapshotSettingsSource,
+  shouldReadProviderUsage,
   type ProviderSnapshotSettings,
 } from "@t3tools/provider-core/server/snapshotSettings";
 const decodeGrokSettings = Schema.decodeSync(GrokSettings);
@@ -217,12 +218,18 @@ export const GrokDriver: ProviderDriver<GrokSettings, GrokDriverEnv, Path.Path> 
             snapshot.auth.status === "authenticated"
           ),
         (snapshot) =>
-          readGrokAccount(processEnv).pipe(
-            Effect.map(({ email, usageLimits }) => ({
-              ...snapshot,
-              auth: email ? { ...snapshot.auth, email } : snapshot.auth,
-              usageLimits,
-            })),
+          host.settings.get.pipe(
+            Effect.flatMap((settings) =>
+              shouldReadProviderUsage(settings, instanceId)
+                ? readGrokAccount(processEnv).pipe(
+                    Effect.map(({ email, usageLimits }) => ({
+                      ...snapshot,
+                      auth: email ? { ...snapshot.auth, email } : snapshot.auth,
+                      usageLimits,
+                    })),
+                  )
+                : Effect.succeed(snapshot),
+            ),
           ),
       ),
       Effect.map(stampIdentity),

@@ -12,7 +12,7 @@ Open **Settings → Providers → Text generators → Add generator** (stored pe
 - **OpenRouter**: Enter an OpenRouter API key to use any model it serves.
 - **Custom (OpenAI-compatible)**: Enter a base URL (e.g. Ollama at `http://localhost:11434/v1` or LM Studio—`localhost` resolves on the environment's server).
 
-Click **Test** beside a model picker to verify the key works, or **Show models** to refresh the catalog. Disabling or removing a generator falls back to the environment's default text generation model.
+Click **Test** beside a model picker to verify the key works, or **Show models** to refresh the catalog. MI Code uses the selected provider and model for each task. If that selection is unavailable, choose an available model in Settings and try again. Generated PR titles and descriptions are based on the branch changes and the configured writing style.
 
 ## Limitations
 

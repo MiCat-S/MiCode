@@ -1,4 +1,9 @@
-import { GitCommandError, OrchestrationDispatchCommandError } from "@t3tools/contracts";
+import { UPSTREAM_TRIAGE_ENABLED } from "@t3tools/shared/triagePrompt";
+import {
+  GitCommandError,
+  OrchestrationDispatchCommandError,
+  ServerPrepareTriageError,
+} from "@t3tools/contracts";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- A synchronous digest inside the pure provider mapping.
 import * as NodeCrypto from "node:crypto";
 import * as FeatureFlags from "@t3tools/shared/FeatureFlags";
@@ -2894,7 +2899,10 @@ export const layerWsRpc = (
         [WS_METHODS.serverCheckOtlpEndpoint]: (input) => otlpEndpointCheck.check(input),
         [WS_METHODS.serverListTextGeneratorModels]: (input) => textGenerators.listModels(input),
         [WS_METHODS.promptEnhancementEnhance]: (input) => promptEnhancement.enhance(input),
-        [WS_METHODS.serverPrepareTriage]: (input) => triage.prepare(input),
+        [WS_METHODS.serverPrepareTriage]: (input) =>
+          UPSTREAM_TRIAGE_ENABLED
+            ? triage.prepare(input)
+            : Effect.fail(new ServerPrepareTriageError({ disabled: true })),
         [WS_METHODS.serverSignalProcess]: (input) => processDiagnostics.signal(input),
         [WS_METHODS.serverReportClientActivity]: (input, metadata) =>
           Ref.update(rpcClientIds, (clientIds) => {

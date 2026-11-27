@@ -587,6 +587,32 @@ fs.createReadStream(null, { fd: 3 }).on("end", quit).on("data", (chunk) => {
     }),
   );
 
+  it.live("blocks remote resources with CSP while running inline JavaScript and CSS", (ctx) =>
+    Effect.gen(function* () {
+      const executable = (yield* HostProcess.Environment)[TEST_BROWSER_ENV];
+      if (!executable) return ctx.skip(`Set ${TEST_BROWSER_ENV} to run this test.`);
+      const preview = yield* Effect.flatMap(HtmlRender.HtmlRender, (htmlRender) =>
+        htmlRender.preview({
+          html: [
+            "<style>p { color: rgb(1, 2, 3) }</style>",
+            "<p>Inline content</p>",
+            '<img src="https://example.invalid/remote.png">',
+            '<script src="https://example.invalid/remote.js"></script>',
+            '<script>console.log(getComputedStyle(document.querySelector("p")).color);',
+            'fetch("https://example.invalid/data").catch(() => {});</script>',
+          ].join(""),
+        }),
+      ).pipe(Effect.provide(layerHtmlRender(executable)));
+      const text = preview.consoleMessages.map((message) => message.text);
+      expect(text).toContain("rgb(1, 2, 3)");
+      for (const url of ["remote.png", "remote.js", "/data"]) {
+        expect(
+          text.some((line) => line.includes(url) && line.includes("Content Security Policy")),
+        ).toBe(true);
+      }
+    }),
+  );
+
   it.live("keeps every local file but the page itself out of the browser", (ctx) =>
     Effect.gen(function* () {
       const executable = (yield* HostProcess.Environment)[TEST_BROWSER_ENV];

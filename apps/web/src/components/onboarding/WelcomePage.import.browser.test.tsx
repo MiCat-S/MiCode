@@ -316,12 +316,14 @@ async function click(label: string) {
   await act(async () => target.click());
 }
 
-async function mountWelcome() {
-  return render(
+async function mountWelcome(scan = true) {
+  const screen = await render(
     <RegistryContext.Provider value={appAtomRegistry}>
       <WelcomePage environmentId={primaryId} onDone={state.onDone} />
     </RegistryContext.Provider>,
   );
+  if (scan) await click("Check for projects");
+  return screen;
 }
 
 // The mocked modules read `state`, so every test starts by replacing all of it.
@@ -370,6 +372,14 @@ function setup() {
   localStorage.removeItem(welcomeImportSelectionKey(primaryId));
   return now;
 }
+
+it("waits for the user to check for projects before reading agent history", async () => {
+  using _now = setup();
+  await using _screen = await mountWelcome(false);
+  expect(state.scan).not.toHaveBeenCalled();
+  await click("Check for projects");
+  expect(state.scan).toHaveBeenCalledWith({ environmentId: primaryId });
+});
 
 it("rechecks after project creation and can retry its history without recreating the project", async () => {
   using _now = setup();

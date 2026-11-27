@@ -6,6 +6,20 @@ import {
 } from "./themePalettes.ts";
 import { EVENT_CODE_SHORTCUT_KEYS } from "./keybindings.ts";
 
+export const HTML_RENDER_FRAME_SANDBOX = "allow-scripts";
+// Mobile WebViews use their user-gesture popup gate for clicked links; web iframes use the stricter sandbox above.
+export const HTML_RENDER_CONTENT_SECURITY_POLICY = [
+  "default-src 'none'",
+  "script-src 'unsafe-inline'",
+  "style-src 'unsafe-inline'",
+  "img-src data: blob:",
+  "media-src data: blob:",
+  "font-src data:",
+  "base-uri 'none'",
+  "form-action 'none'",
+  `sandbox ${HTML_RENDER_FRAME_SANDBOX} allow-popups`,
+].join("; ");
+
 export const HTML_RENDER_TOOL_NAME = "html_render";
 export const HTML_RENDER_MIN_HEIGHT = 80;
 export const HTML_RENDER_MAX_HEIGHT = 2000;
@@ -282,7 +296,7 @@ interface HtmlRenderImage {
 }
 
 function readHtmlRenderImage(src: unknown, name: unknown): HtmlRenderImage | undefined {
-  if (typeof src !== "string" || !/^(?:https?:\/\/|data:image\/)/i.test(src)) return undefined;
+  if (typeof src !== "string" || !/^data:image\//i.test(src)) return undefined;
   const trimmed = typeof name === "string" ? name.trim() : "";
   // The page sends any alt text; never end the label on half an emoji.
   const last = trimmed.charCodeAt(HTML_RENDER_MAX_TITLE_LENGTH - 1);

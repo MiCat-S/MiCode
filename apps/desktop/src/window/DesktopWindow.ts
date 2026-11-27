@@ -794,10 +794,18 @@ export const make = Effect.gen(function* () {
       }
       return { action: "deny" };
     });
-    // Chromium asks this before handing a navigation to an OS protocol handler, and grants it
-    // when nothing answers. External links are opened through ElectronShell only.
-    window.webContents.session.setPermissionRequestHandler((_contents, permission, callback) =>
-      callback(permission !== "openExternal"),
+    // The app can embed MCP widgets and documents. Their permissions never inherit the app's.
+    const allowAppPermission = (permission: string, isMainFrame: boolean, url: string) =>
+      isMainFrame &&
+      permission !== "openExternal" &&
+      isSameOriginRendererNavigation({ applicationUrl, navigationUrl: url });
+    window.webContents.session.setPermissionRequestHandler(
+      (_contents, permission, callback, details) =>
+        callback(allowAppPermission(permission, details.isMainFrame, details.requestingUrl)),
+    );
+    window.webContents.session.setPermissionCheckHandler(
+      (_contents, permission, requestingOrigin, details) =>
+        allowAppPermission(permission, details.isMainFrame, requestingOrigin),
     );
     window.webContents.on("will-navigate", (event, url) => {
       if (

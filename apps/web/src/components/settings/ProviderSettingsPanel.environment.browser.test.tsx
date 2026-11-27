@@ -275,14 +275,11 @@ describe("EnvironmentProviderSettings routing", () => {
     await using _screen = await render(panel());
     await userEvent.click(page.getByRole("switch", { name: "Enable Work" }).first());
 
-    expect(state.mutateProviderInstance).toHaveBeenCalledWith(
-      {
-        operation: "upsert",
-        instanceId: customId,
-        instance: { driver: ProviderDriverKind.make("codex"), enabled: false, displayName: "Work" },
-      },
-      {},
-    );
+    expect(state.mutateProviderInstance).toHaveBeenCalledWith({
+      operation: "upsert",
+      instanceId: customId,
+      instance: { driver: ProviderDriverKind.make("codex"), enabled: false, displayName: "Work" },
+    });
   });
 
   it.each([false, true])(
@@ -453,18 +450,15 @@ describe("EnvironmentProviderSettings routing", () => {
     await expect.element(page.getByRole("button", { name: "Reconnect account" })).toBeVisible();
     await userEvent.click(page.getByRole("button", { name: "Use existing CLI" }).element());
 
-    expect(state.mutateProviderInstance).toHaveBeenCalledWith(
-      {
-        operation: "upsert",
-        instanceId: codexId,
-        instance: {
-          driver: codex,
-          enabled: true,
-          config: { enabled: true, setupMode: "existing" },
-        },
+    expect(state.mutateProviderInstance).toHaveBeenCalledWith({
+      operation: "upsert",
+      instanceId: codexId,
+      instance: {
+        driver: codex,
+        enabled: true,
+        config: { enabled: true, setupMode: "existing" },
       },
-      {},
-    );
+    });
   });
 });
 

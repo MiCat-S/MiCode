@@ -57,10 +57,10 @@ import { enrichProviderSnapshotWithVersionAdvisory } from "@t3tools/provider-cor
 import {
   haveProviderSnapshotSettingsChanged,
   makeProviderSnapshotSettingsSource,
+  shouldReadProviderUsage,
   type ProviderSnapshotSettings,
 } from "@t3tools/provider-core/server/snapshotSettings";
 import {
-  makeClaudeCapabilitiesCacheKey,
   makeClaudeContinuationGroupKey,
   mergeClaudeProcessEnvironment,
   resolveClaudeHomePath,
@@ -214,13 +214,12 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
       modelRoutes.route,
     );
 
-    // Per-instance capabilities cache: keyed on binary + resolved HOME so
-    // account-specific probes never share auth metadata across instances.
+    // Per-instance cache. A probe without usage is never reused for an opt-in probe.
     // A transient miss may reuse the last account once, but its usage windows keep their age.
     const lastGoodCapabilities = yield* Ref.make<ClaudeCapabilitiesProbe | undefined>(undefined);
     const capabilitiesProbeCache = yield* Cache.makeWith(
-      () =>
-        probeClaudeCapabilities(effectiveConfig, processEnv, stateDir).pipe(
+      (includeUsage: boolean) =>
+        probeClaudeCapabilities(effectiveConfig, processEnv, stateDir, true, includeUsage).pipe(
           Effect.flatMap((capabilities) =>
             ClaudeResetCredits.readClaudeOrganizationId(accountConfigPath).pipe(
               Effect.map((workspaceId) => ({
@@ -259,41 +258,42 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
         ),
       {
         capacity: 1,
-        timeToLive: (exit) =>
-          // Only fresh usage earns the TTL; failures, fallbacks and usage-less probes retry.
+        timeToLive: (exit, includeUsage) =>
           Exit.isSuccess(exit) &&
           exit.value._tag === "fresh" &&
-          exit.value.capabilities.usage !== undefined
+          (!includeUsage || exit.value.capabilities.usage !== undefined)
             ? CAPABILITIES_PROBE_TTL
             : Duration.zero,
       },
     );
-    const capabilitiesCacheKey = yield* makeClaudeCapabilitiesCacheKey(
-      effectiveConfig,
-      stateDir,
-      processEnv,
-    );
-    const resolveCapabilities = Cache.get(capabilitiesProbeCache, capabilitiesCacheKey).pipe(
-      Effect.map((result) => result.capabilities),
-    );
+    const resolveCapabilities = (includeUsage: boolean) =>
+      Cache.get(capabilitiesProbeCache, includeUsage).pipe(
+        Effect.map((result) => result.capabilities),
+      );
 
     const checkProvider = catalogService.refreshInBackground.pipe(
       Effect.andThen(
         modelCatalog.pipe(
           Effect.flatMap((catalog) =>
-            checkClaudeProviderStatus(
-              effectiveConfig,
-              () => resolveCapabilities,
-              processEnv,
-              stateDir,
-              catalog,
-              scopedLimitNames,
-              (version) =>
-                ClaudeResetCredits.readClaudeResetCredits(configDir, version).pipe(
-                  Effect.provideService(HttpClient.HttpClient, httpClient),
-                  Effect.provideService(FileSystem.FileSystem, fileSystem),
-                  Effect.provideService(Path.Path, path),
-                ),
+            host.settings.get.pipe(
+              Effect.flatMap((settings) => {
+                const includeUsage = shouldReadProviderUsage(settings, instanceId);
+                return checkClaudeProviderStatus(
+                  effectiveConfig,
+                  () => resolveCapabilities(includeUsage),
+                  processEnv,
+                  stateDir,
+                  catalog,
+                  scopedLimitNames,
+                  (version) =>
+                    ClaudeResetCredits.readClaudeResetCredits(configDir, version).pipe(
+                      Effect.provideService(HttpClient.HttpClient, httpClient),
+                      Effect.provideService(FileSystem.FileSystem, fileSystem),
+                      Effect.provideService(Path.Path, path),
+                    ),
+                  includeUsage,
+                );
+              }),
             ),
           ),
           Effect.tap((provider) =>

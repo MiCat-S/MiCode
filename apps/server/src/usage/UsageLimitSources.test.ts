@@ -63,6 +63,7 @@ it.effect("keeps malformed source URLs encodable for config subscribers", () =>
         invalidate: () => Effect.void,
       }),
       ServerSettings.layerTest({
+        providerUsageEnabled: true,
         usageLimitSources: {
           [UsageLimitSourceId.make("local-hub")]: {
             kind: "cliproxy",
@@ -167,6 +168,7 @@ it.effect("publishes validated HTTP quotas as display-only accounts", () => {
         invalidate: () => Effect.void,
       }),
       ServerSettings.layerTest({
+        providerUsageEnabled: true,
         usageLimitSources: {
           [UsageLimitSourceId.make("quota")]: {
             kind: "http",
@@ -209,6 +211,7 @@ it.effect("reads a management key from its secret provider", () => {
   }).pipe(
     Effect.provide([
       ServerSettings.layerTest({
+        providerUsageEnabled: true,
         usageLimitSources: {
           [UsageLimitSourceId.make("resolved-hub")]: {
             kind: "cliproxy",
@@ -285,6 +288,7 @@ it.effect("keeps an account's last good reading when the hub's next read of it i
   }).pipe(
     Effect.provide([
       ServerSettings.layerTest({
+        providerUsageEnabled: true,
         usageLimitSources: {
           [UsageLimitSourceId.make("hub")]: {
             kind: "cliproxy",

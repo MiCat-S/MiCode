@@ -22,7 +22,11 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { isTriagePrompt, replaceTriagePlaybookLink } from "@t3tools/shared/triagePrompt";
+import {
+  isTriagePrompt,
+  replaceTriagePlaybookLink,
+  UPSTREAM_TRIAGE_ENABLED,
+} from "@t3tools/shared/triagePrompt";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { shallow } from "zustand/shallow";
@@ -524,7 +528,8 @@ export function useDraftEnvironmentRouting(input: DraftEnvironmentRoutingInput) 
         project.environmentId === target.environmentId && project.id === target.projectId,
     );
     // The playbook and context files exist only on the machine that prepared them.
-    const followsTriage = isTriagePrompt(getComposerDraft(draftId)?.prompt ?? "");
+    const followsTriage =
+      UPSTREAM_TRIAGE_ENABLED && isTriagePrompt(getComposerDraft(draftId)?.prompt ?? "");
     if (target.projectId !== null && !knownProject) {
       finish();
       return;

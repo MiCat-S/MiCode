@@ -5692,5 +5692,7 @@
   "99451a5d2d40440f": "Retirée par {by}.",
   "3ee30a50b70fffab": "Retirée par {by} : {reason}",
   "201490988858b511": "retirée par {by}",
-  "46d614fa7b4bf1e5": "Exécutions de workflow"
+  "46d614fa7b4bf1e5": "Exécutions de workflow",
+  "b48b73b990703db8": "Consulter l’utilisation des fournisseurs",
+  "1ef6411381bd479e": "Consulte les limites d’utilisation et l’historique d’activité local des fournisseurs activés."
 }

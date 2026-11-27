@@ -3,6 +3,7 @@ import {
   type HtmlRenderReference,
   HTML_RENDER_COLUMN_WIDTH,
   HTML_RENDER_CONTAIN_SCROLL_FRAGMENT,
+  HTML_RENDER_FRAME_SANDBOX,
   htmlRenderFrameHeight,
   htmlRenderResult,
   htmlRenderThemeFragment,
@@ -90,7 +91,7 @@ export function GuestHtmlRender({
         ref={frameRef}
         src={src}
         title={reference.title}
-        sandbox="allow-scripts allow-forms allow-popups allow-downloads"
+        sandbox={HTML_RENDER_FRAME_SANDBOX}
         className="block size-full rounded-lg border border-border"
       />
     </div>

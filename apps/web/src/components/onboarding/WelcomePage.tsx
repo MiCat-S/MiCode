@@ -150,7 +150,8 @@ export function WelcomePage({
     canShare: canReadRelay && canWriteRelay,
     policy: useManagedPolicy(environmentId),
   });
-  const scans = useProjectScans([environmentId]);
+  const [scanRequested, setScanRequested] = useState(false);
+  const scans = useProjectScans(scanRequested ? [environmentId] : []);
   const [storedSelection, storeSelection] = useLocalStorage(
     welcomeImportSelectionKey(environmentId),
     null,
@@ -258,7 +259,7 @@ export function WelcomePage({
   const selected = projectImport.canWrite ? projectImport.selected : [];
   const newCount = selected.filter(projectImport.isNew).length;
   const start = () => {
-    keepChoicesRef.current = scans.some((scan) => scan.data === null);
+    keepChoicesRef.current = scans.length === 0 || scans.some((scan) => scan.data === null);
     if (selected.length === 0) {
       projectImport.finishAfterImport();
       return;
@@ -300,6 +301,7 @@ export function WelcomePage({
               />
               <ProjectsSection
                 scan={scans[0]}
+                onScan={() => setScanRequested(true)}
                 projectImport={projectImport}
                 isImporting={isImporting}
               />
@@ -776,10 +778,12 @@ function AgentLogoStack({
 
 function ProjectsSection({
   scan,
+  onScan,
   projectImport,
   isImporting,
 }: {
   readonly scan: ReturnType<typeof useProjectScans>[number] | undefined;
+  readonly onScan: () => void;
   readonly projectImport: ReturnType<typeof useProjectImport>;
   readonly isImporting: boolean;
 }) {
@@ -797,7 +801,22 @@ function ProjectsSection({
     setSelectedKeys,
     visibleImportError,
   } = projectImport;
-  if (scan === undefined) return null;
+  if (scan === undefined) {
+    return (
+      <WelcomeSection title={gt("Projects")}>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <Button variant="outline" size="sm" onClick={onScan}>
+            <T>Check for projects</T>
+          </Button>
+          <span className="text-sm text-muted-foreground">
+            <T>
+              Look for projects in your <Var>{importSourcesLabel}</Var> history.
+            </T>
+          </span>
+        </div>
+      </WelcomeSection>
+    );
+  }
   if (scan.isPending && candidates.length === 0) {
     return (
       <WelcomeSection title={gt("Projects")}>

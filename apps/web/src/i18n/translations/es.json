@@ -12970,5 +12970,17 @@
   "3ee98da81538c6de": "No se pudo reproducir la narración.",
   "95435f0b59cb2193": "Vista previa de audio",
   "5807c08e225c6b3d": "Descargar",
-  "0d50b5bfe7151ece": "No se pudo descargar el archivo"
+  "0d50b5bfe7151ece": "No se pudo descargar el archivo",
+  "b48b73b990703db8": "Consultar el uso de proveedores",
+  "1ef6411381bd479e": "Consulta los límites de uso y el historial local de actividad de los proveedores habilitados.",
+  "571631d2e2a0c2bf": "Buscar proyectos",
+  "eda29e615edb5827": [
+    "Busca proyectos en el historial de ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    "."
+  ]
 }

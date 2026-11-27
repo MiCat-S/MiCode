@@ -1,5 +1,8 @@
 import { TRIAGE_PROMPT_FILE_NAME } from "@t3tools/contracts";
 
+// MI Code does not run the upstream triage playbook or file reports in its repository.
+export const UPSTREAM_TRIAGE_ENABLED = false;
+
 const PLAYBOOK_LINK_START = `[${TRIAGE_PROMPT_FILE_NAME}](`;
 
 /** A draft is a triage draft while its message still links the playbook file. */

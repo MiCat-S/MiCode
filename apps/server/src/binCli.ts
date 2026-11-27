@@ -1,3 +1,4 @@
+import { UPSTREAM_TRIAGE_ENABLED } from "@t3tools/shared/triagePrompt";
 import { doctorCommand } from "./cli/doctor.ts";
 import { policyCommand } from "./cli/policy.ts";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
@@ -91,7 +92,7 @@ export const makeCli = () =>
       traceCommand,
       doctorCommand,
       policyCommand,
-      triageCommand,
+      ...(UPSTREAM_TRIAGE_ENABLED ? [triageCommand] : []),
     ]),
   );
 

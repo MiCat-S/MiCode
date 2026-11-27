@@ -12975,5 +12975,17 @@
   "3ee98da81538c6de": "Impossible de lire la narration.",
   "95435f0b59cb2193": "Aperçu audio",
   "5807c08e225c6b3d": "Télécharger",
-  "0d50b5bfe7151ece": "Impossible de télécharger le fichier"
+  "0d50b5bfe7151ece": "Impossible de télécharger le fichier",
+  "b48b73b990703db8": "Consulter l’utilisation des fournisseurs",
+  "1ef6411381bd479e": "Consulte les limites d’utilisation et l’historique d’activité local des fournisseurs activés.",
+  "571631d2e2a0c2bf": "Rechercher des projets",
+  "eda29e615edb5827": [
+    "Recherchez des projets dans l’historique de ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    "."
+  ]
 }

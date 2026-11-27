@@ -148,12 +148,9 @@ describe("readHtmlRenderImageRequest", () => {
     expect(
       readHtmlRenderImageRequest(image({ src: "data:image/png;base64,AA", name: " Chart " })),
     ).toEqual({ images: [{ src: "data:image/png;base64,AA", name: "Chart" }], index: 0 });
-    expect(readHtmlRenderImageRequest(image({ src: "https://example.com/a.png" }))).toEqual({
-      images: [{ src: "https://example.com/a.png", name: "Image" }],
-      index: 0,
-    });
+    expect(readHtmlRenderImageRequest(image({ src: "https://example.com/a.png" }))).toBeUndefined();
     const boundaryImage = readHtmlRenderImageRequest(
-      image({ src: "https://example.com/a.png", name: "a".repeat(199) + "😀" }),
+      image({ src: "data:image/png;base64,AA", name: "a".repeat(199) + "😀" }),
     );
     expect(boundaryImage?.images[0]?.name.isWellFormed()).toBe(true);
     expect(boundaryImage?.images[0]?.name).toBe("a".repeat(199));
@@ -163,10 +160,10 @@ describe("readHtmlRenderImageRequest", () => {
   });
 
   it("keeps the page's other images, dropping unsafe ones, around the clicked image", () => {
-    const b = { src: "https://example.com/b.png", name: "B" };
+    const b = { src: "data:image/png;base64,BB", name: "B" };
     const params = {
       ...b,
-      images: [{ src: "https://example.com/a.png", name: "A" }, { src: "blob:null/1" }, b, null],
+      images: [{ src: "data:image/png;base64,AA", name: "A" }, { src: "blob:null/1" }, b, null],
       index: 2,
     };
     const request = (overrides: object) =>
@@ -176,7 +173,7 @@ describe("readHtmlRenderImageRequest", () => {
         params: { ...params, ...overrides },
       });
     expect(request({})).toEqual({
-      images: [{ src: "https://example.com/a.png", name: "A" }, b],
+      images: [{ src: "data:image/png;base64,AA", name: "A" }, b],
       index: 1,
     });
     // An index that does not point at the clicked image falls back to that image alone.

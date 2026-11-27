@@ -29,7 +29,6 @@ import { sourceControlDefinitions } from "../sourceControl/sourceControlDefiniti
 import * as ServerConfig from "../config.ts";
 import * as PullRequestReviewGuides from "../persistence/PullRequestReviewGuides.ts";
 import * as ProjectService from "../project/ProjectService.ts";
-import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
@@ -67,7 +66,6 @@ const make = Effect.gen(function* () {
   const guides = yield* PullRequestReviewGuides.PullRequestReviewGuideRepository;
   const projects = yield* ProjectService.ProjectService;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
-  const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
   const textGeneration = yield* TextGeneration.TextGeneration;
   const git = yield* GitVcsDriver.GitVcsDriver;
   const fileSystem = yield* FileSystem.FileSystem;
@@ -373,21 +371,16 @@ const make = Effect.gen(function* () {
     runId: string,
     owns: Effect.Effect<boolean>,
   ) {
-    const [activity, settings, providers, stack] = yield* Effect.all(
+    const [activity, settings, stack] = yield* Effect.all(
       [
         pullRequests.activity(input),
         serverSettings.getSettings,
-        providerRegistry.getProviders,
         pullRequests.stack(input).pipe(Effect.orElseSucceed(() => null)),
       ],
       { concurrency: "unbounded" },
     );
     const projectSettings = resolveProjectSettings(settings, input.projectId).settings;
-    const modelSelection = ServerSettings.resolveReviewGuideModelSelection(
-      projectSettings,
-      providers,
-      input.projectId,
-    );
+    const modelSelection = ServerSettings.resolveReviewGuideModelSelection(projectSettings);
     const { generated, change } = yield* checkoutHead(
       workspaceRoot,
       locator,

@@ -25,10 +25,10 @@ const HtmlPath = Schema.String.annotate({
 });
 
 const PAGE_RULES =
-  "Self-contained: inline <style> and <script>. Local images as absolute paths are inlined. Remote URLs load as-is.";
+  "Inline scripts and styles. Absolute local image paths are inlined. Remote loads are blocked.";
 
 export const HtmlPreviewTool = Tool.make("html_preview", {
-  description: `Check an HTML page before html_render. Returns PNG, contentHeight, and console output. ${PAGE_RULES} Theme and layout rules are in html_render.`,
+  description: `Check HTML before html_render. Returns PNG, contentHeight, and console output. ${PAGE_RULES} See html_render for theme and layout.`,
   parameters: Schema.Struct({
     path: Schema.optional(HtmlPath),
     html: Schema.optional(Html),
@@ -77,7 +77,7 @@ export const HtmlPreviewTool = Tool.make("html_preview", {
 
 // This affects only the caller's thread, not its workspace, so read-only sandboxes and plan mode may use it.
 const HtmlRenderTool = Tool.make(HTML_RENDER_TOOL_NAME, {
-  description: `Show a finished HTML page (chart, diagram, mockup) inline in this thread, above your final reply. Do not announce or restate the page. Frame fits height to ${HTML_RENDER_MAX_FIT_HEIGHT}px. On mobile, content past the given height scrolls. ${HTML_RENDER_LAYOUT_GUIDE} ${HTML_RENDER_THEME_GUIDE}`,
+  description: `Show finished HTML inline above your reply. Do not announce or restate it. Fits up to ${HTML_RENDER_MAX_FIT_HEIGHT}px; mobile overflow scrolls. ${PAGE_RULES} ${HTML_RENDER_LAYOUT_GUIDE} ${HTML_RENDER_THEME_GUIDE}`,
   parameters: Schema.Struct({
     path: Schema.optional(HtmlPath),
     html: Schema.optional(Html),

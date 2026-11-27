@@ -2133,6 +2133,24 @@ export function ThreadsSettingsPanel() {
       ) : null}
 
       <SettingsSection id="usage-limits" title={gt("Usage limits")}>
+        {!isProjectScope ? (
+          <SettingsRow
+            serverScoped
+            {...setting("read-provider-usage")}
+            description={gt("Read usage limits and local activity history for enabled providers.")}
+            settingKeys={["providerUsageEnabled"]}
+            control={
+              <ScopedSwitch
+                settingKeys={["providerUsageEnabled"]}
+                checked={settings.providerUsageEnabled}
+                onCheckedChange={(checked) =>
+                  updateSettings({ providerUsageEnabled: Boolean(checked) })
+                }
+                aria-label={gt("Read provider usage")}
+              />
+            }
+          />
+        ) : null}
         <SettingsRow
           serverScoped
           {...setting("auto-resume-limited-threads")}

@@ -5698,5 +5698,7 @@
   "99451a5d2d40440f": "Återkallad av {by}.",
   "3ee30a50b70fffab": "Återkallad av {by}: {reason}",
   "201490988858b511": "återkallad av {by}",
-  "46d614fa7b4bf1e5": "Arbetsflödeskörningar"
+  "46d614fa7b4bf1e5": "Arbetsflödeskörningar",
+  "b48b73b990703db8": "Läs användningsdata för leverantörer",
+  "1ef6411381bd479e": "Läs användningsgränser och lokal aktivitetshistorik för aktiverade leverantörer."
 }

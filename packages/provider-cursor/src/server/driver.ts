@@ -32,6 +32,7 @@ import { makeManualOnlyProviderMaintenanceCapabilities } from "@t3tools/provider
 import {
   haveProviderSnapshotSettingsChanged,
   makeProviderSnapshotSettingsSource,
+  shouldReadProviderUsage,
   type ProviderSnapshotSettings,
 } from "@t3tools/provider-core/server/snapshotSettings";
 import { probeCursorSkills } from "./skills.ts";
@@ -237,10 +238,16 @@ export const CursorDriver: ProviderDriver<
                 snapshot.auth.status === "authenticated"
               ),
             (snapshot) =>
-              readCursorUsageLimits(effectiveConfig, {
-                ...processEnv,
-                CURSOR_API_KEY: apiKey,
-              }).pipe(Effect.map((usageLimits) => ({ ...snapshot, usageLimits }))),
+              host.settings.get.pipe(
+                Effect.flatMap((settings) =>
+                  shouldReadProviderUsage(settings, instanceId)
+                    ? readCursorUsageLimits(effectiveConfig, {
+                        ...processEnv,
+                        CURSOR_API_KEY: apiKey,
+                      }).pipe(Effect.map((usageLimits) => ({ ...snapshot, usageLimits })))
+                    : Effect.succeed(snapshot),
+                ),
+              ),
           ),
         ),
       ),

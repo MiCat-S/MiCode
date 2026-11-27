@@ -12982,5 +12982,17 @@
   "3ee98da81538c6de": "Det gick inte att spela upp uppläsningen.",
   "95435f0b59cb2193": "Ljudförhandsvisning",
   "5807c08e225c6b3d": "Ladda ned",
-  "0d50b5bfe7151ece": "Det gick inte att ladda ned filen"
+  "0d50b5bfe7151ece": "Det gick inte att ladda ned filen",
+  "b48b73b990703db8": "Läs användningsdata för leverantörer",
+  "1ef6411381bd479e": "Läs användningsgränser och lokal aktivitetshistorik för aktiverade leverantörer.",
+  "571631d2e2a0c2bf": "Sök efter projekt",
+  "eda29e615edb5827": [
+    "Sök efter projekt i historiken för ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    "."
+  ]
 }

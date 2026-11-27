@@ -77,6 +77,7 @@ function makeFakeBrowserWindow() {
     id: 1,
     session: {
       setPermissionRequestHandler: vi.fn(),
+      setPermissionCheckHandler: vi.fn(),
       webRequest: {
         onBeforeSendHeaders: vi.fn(),
       },
@@ -1664,18 +1665,30 @@ describe("DesktopWindow", () => {
         const answerPermission = vi.mocked(
           fakeWindow.window.webContents.session.setPermissionRequestHandler,
         ).mock.lastCall?.[0];
-        if (!answerPermission) {
-          return yield* Effect.die("permission request handler was not registered");
+        const checkPermission = vi.mocked(
+          fakeWindow.window.webContents.session.setPermissionCheckHandler,
+        ).mock.lastCall?.[0];
+        if (!answerPermission || !checkPermission) {
+          return yield* Effect.die("permission handlers were not registered");
         }
-        const answers = (["openExternal", "media"] as const).map((permission) => {
+        for (const [permission, requestingUrl, isMainFrame, allowed] of [
+          ["media", "t3code-dev://app/chat", true, true],
+          ["openExternal", "t3code-dev://app/chat", true, false],
+          ["media", "t3code-dev://app/chat", false, false],
+          ["media", "http://127.0.0.1:3773/api/assets/token/page.html", false, false],
+          ["geolocation", "https://widget.example/", false, false],
+          ["media", "https://other.example/", true, false],
+        ] as const) {
           const callback = vi.fn();
-          answerPermission(fakeWindow.window.webContents, permission, callback, {
-            isMainFrame: false,
-            requestingUrl: "http://127.0.0.1:3773/api/assets/token/page.html",
-          });
-          return callback.mock.lastCall?.[0];
-        });
-        assert.deepEqual(answers, [false, true]);
+          const contents = fakeWindow.window.webContents;
+          answerPermission(contents, permission, callback, { isMainFrame, requestingUrl });
+          assert.deepEqual(callback.mock.lastCall, [allowed], `${permission} ${requestingUrl}`);
+          assert.strictEqual(
+            checkPermission(contents, permission, requestingUrl, { isMainFrame, requestingUrl }),
+            allowed,
+            `${permission} ${requestingUrl}`,
+          );
+        }
       }).pipe(Effect.provide(layer));
     }),
   );

@@ -57,7 +57,6 @@ import { parseGitCloneProgressLine } from "../project/gitCloneProgress.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
-import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import * as CommandReceiptStore from "./CommandReceiptStore.ts";
@@ -292,7 +291,6 @@ const make = Effect.gen(function* () {
   const git = yield* GitWorkflow.GitWorkflowService;
   const checkpointStore = yield* CheckpointStore.CheckpointStore;
   const setupScripts = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
-  const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const textGeneration = yield* TextGeneration.TextGeneration;
   const receipts = yield* CommandReceiptStore.CommandReceiptStoreV2;
@@ -660,14 +658,7 @@ const make = Effect.gen(function* () {
             yield* serverSettings.getSettings,
             input.projectId,
           ).settings;
-          const modelSelection =
-            settings.sourceControlWriterModelSelection === null
-              ? settings.textGenerationModelSelection
-              : ServerSettings.resolveSourceControlWriterModelSelection(
-                  settings,
-                  yield* providerRegistry.getProviders,
-                  input.projectId,
-                );
+          const modelSelection = ServerSettings.resolveSourceControlWriterModelSelection(settings);
           return yield* textGeneration
             .generateBranchName({
               naming: {

@@ -88,6 +88,7 @@ import {
 import {
   haveProviderSnapshotSettingsChanged,
   makeProviderSnapshotSettingsSource,
+  shouldReadProviderUsage,
   type ProviderSnapshotSettings,
 } from "@t3tools/provider-core/server/snapshotSettings";
 const decodeOpenCodeSettings = Schema.decodeSync(OpenCodeSettings);
@@ -578,7 +579,14 @@ export const OpenCodeDriver: ProviderDriver<
     );
     let unsupportedUsageVersion: string | undefined;
     const checkUsageLimits = Effect.gen(function* () {
-      if (!effectiveConfig.enabled) return yield* legacyUsageLimits;
+      if (
+        !effectiveConfig.enabled ||
+        !(yield* host.settings.get.pipe(
+          Effect.map((settings) => shouldReadProviderUsage(settings, instanceId)),
+          Effect.orElseSucceed(() => false),
+        ))
+      )
+        return undefined;
       const runtime = yield* runtimeProbe.get;
       if (runtime.generation === "v1" || runtime.version === unsupportedUsageVersion)
         return yield* legacyUsageLimits;
@@ -749,7 +757,8 @@ export const OpenCodeDriver: ProviderDriver<
       getSettings: snapshotSettings.getSettings,
       streamSettings: snapshotSettings.streamSettings,
       haveSettingsChanged: haveProviderSnapshotSettingsChanged,
-      checkProviderOnSettingsChange: () => false,
+      checkProviderOnSettingsChange: (previous, next) =>
+        previous.providerUsageEnabled !== next.providerUsageEnabled,
       // A failed or still-loading catalog must recover without a manual
       // refresh. Healthy instances need no recurring server starts.
       refreshOnInterval: (snapshot) =>

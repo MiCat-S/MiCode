@@ -5,7 +5,6 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 
-import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import * as SpeechPostProcessing from "./postProcessing.ts";
@@ -16,7 +15,7 @@ const textGenerationSelection = {
 };
 const acpSelection = { instanceId: ProviderInstanceId.make("acp_local"), model: "default" };
 
-it.effect("cleanup pinned to a provider that cannot generate text uses the text model", () =>
+it.effect("cleanup keeps the selected provider even when it cannot generate text", () =>
   Effect.gen(function* () {
     const used = yield* Ref.make<ModelSelection | null>(null);
     const layer = SpeechPostProcessing.layer.pipe(
@@ -25,19 +24,6 @@ it.effect("cleanup pinned to a provider that cannot generate text uses the text 
           generateTranscriptionPostProcessing: (input: { modelSelection: ModelSelection }) =>
             Ref.set(used, input.modelSelection).pipe(Effect.as({ transcription: "Hello, world." })),
         } as unknown as TextGeneration.TextGeneration["Service"]),
-      ),
-      Layer.provide(
-        Layer.succeed(ProviderRegistry.ProviderRegistry, {
-          getProviders: Effect.succeed([
-            {
-              instanceId: acpSelection.instanceId,
-              driver: "acpRegistry",
-              enabled: true,
-              installed: true,
-              supportsTextGeneration: false,
-            },
-          ]),
-        } as unknown as ProviderRegistry.ProviderRegistry["Service"]),
       ),
       Layer.provide(
         ServerSettings.layerTest({
@@ -75,7 +61,7 @@ it.effect("cleanup pinned to a provider that cannot generate text uses the text 
     const selection = yield* Ref.get(used);
     assert.deepStrictEqual(
       { instanceId: selection?.instanceId, model: selection?.model },
-      textGenerationSelection,
+      acpSelection,
     );
   }),
 );

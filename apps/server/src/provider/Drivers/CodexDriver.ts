@@ -49,6 +49,7 @@ import {
 import {
   haveProviderSnapshotSettingsChanged,
   makeProviderSnapshotSettingsSource,
+  shouldReadProviderUsage,
   type ProviderSnapshotSettings,
 } from "@t3tools/provider-core/server/snapshotSettings";
 import {
@@ -275,7 +276,17 @@ export const CodexDriver: ProviderDriver<
     const checkProvider = modelCatalog.refreshInBackground.pipe(
       Effect.andThen(
         Effect.zipWith(
-          checkCodexProviderStatus(effectiveConfig, undefined, processEnv),
+          host.settings.get.pipe(
+            Effect.flatMap((settings) =>
+              checkCodexProviderStatus(
+                effectiveConfig,
+                undefined,
+                processEnv,
+                undefined,
+                shouldReadProviderUsage(settings, instanceId),
+              ),
+            ),
+          ),
           currentCatalog,
           (draft, catalog) => stampIdentity(applyCodexModelCatalog(draft, catalog)),
           { concurrent: true },

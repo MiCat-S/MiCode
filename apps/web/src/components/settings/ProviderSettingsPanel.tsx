@@ -32,7 +32,7 @@ import {
   resolveProjectProviderInstanceEnabled,
   resolveProviderInstanceEnabled,
 } from "@t3tools/contracts";
-import { DEFAULT_UNIFIED_SETTINGS, type UnifiedSettings } from "@t3tools/contracts/settings";
+import type { UnifiedSettings } from "@t3tools/contracts/settings";
 import {
   getBackgroundActivityPresetSettings,
   resolveServerBackgroundActivitySettings,
@@ -57,7 +57,6 @@ import { useStableCallback } from "../../hooks/useStableCallback";
 import { ensureLocalApi } from "../../localApi";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { cn } from "../../lib/utils";
-import { resolveAppModelSelectionState } from "../../modelSelection";
 import {
   useEnvironments,
   usePrimaryEnvironmentId,
@@ -112,7 +111,6 @@ import { useSearchableSetting } from "./settingsSearch";
 import { CompactIdleThreadsRow } from "./SettingsPanels";
 import {
   backgroundActivityOverrideSettings,
-  buildProviderInstanceUpdatePatch,
   durationToSeconds,
   PROVIDER_HEALTH_INTERVAL_STEP_SECONDS,
 } from "./SettingsPanels.logic";
@@ -818,23 +816,12 @@ export function EnvironmentProviderSettings({
     rows.find((row) => row.instanceId === selectedInstanceId) ??
     (targetInstanceMissing ? null : (rows[0] ?? null));
 
-  const persistInstance = async (
-    instanceId: ProviderInstanceId,
-    next: ProviderInstanceConfig,
-    textGenerationModelSelection?: Parameters<
-      typeof buildProviderInstanceUpdatePatch
-    >[0]["textGenerationModelSelection"],
-  ) => {
-    const { providerInstances: _providerInstances, ...patch } = buildProviderInstanceUpdatePatch({
-      settings,
+  const persistInstance = async (instanceId: ProviderInstanceId, next: ProviderInstanceConfig) => {
+    const result = await persistProviderInstance({
+      operation: "upsert",
       instanceId,
       instance: next,
-      textGenerationModelSelection,
     });
-    const result = await persistProviderInstance(
-      { operation: "upsert", instanceId, instance: next },
-      patch,
-    );
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
       const error = squashAtomCommandFailure(result);
       toastManager.add({
@@ -848,25 +835,6 @@ export function EnvironmentProviderSettings({
     }
     return result._tag !== "Failure";
   };
-
-  const updateInstance = useStableCallback(
-    (
-      instanceId: ProviderInstanceId,
-      previous: ProviderInstanceConfig,
-      next: ProviderInstanceConfig,
-    ) => {
-      const isDisabling = next.enabled === false && resolveProviderInstanceEnabled(previous);
-      const shouldClearTextGen =
-        isDisabling &&
-        resolveAppModelSelectionState(settings, serverProviders).instanceId === instanceId &&
-        readEnvironmentScope(environmentId, AuthSettingsWriteScope);
-      return persistInstance(
-        instanceId,
-        next,
-        shouldClearTextGen ? DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection : undefined,
-      );
-    },
-  );
 
   const enableInstance = useStableCallback(
     (instanceId: ProviderInstanceId, next: ProviderInstanceConfig) =>
@@ -967,7 +935,7 @@ export function EnvironmentProviderSettings({
   const actions: ProviderInstanceRowActions = {
     acceptUrlAuthentication,
     runProviderUpdate,
-    updateInstance,
+    updateInstance: enableInstance,
     enableInstance,
     deleteInstance,
     resetDefaultInstance,
@@ -1264,7 +1232,6 @@ interface ProviderInstanceRowActions {
   ) => Promise<void>;
   readonly updateInstance: (
     instanceId: ProviderInstanceId,
-    previous: ProviderInstanceConfig,
     next: ProviderInstanceConfig,
   ) => Promise<boolean>;
   readonly enableInstance: (
@@ -1456,7 +1423,7 @@ function ProviderInstanceRow({
           />
         ) : null
       }
-      onUpdate={(next) => actions.updateInstance(instanceId, instance, next)}
+      onUpdate={(next) => actions.updateInstance(instanceId, next)}
       onDelete={
         mode === "editor" && !isDefault
           ? () => actions.deleteInstance(instanceId, instance)

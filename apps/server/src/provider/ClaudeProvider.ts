@@ -491,6 +491,7 @@ const probeClaudeCapabilities = (
   environment?: NodeJS.ProcessEnv,
   cwd?: string,
   includeStatus = true,
+  includeUsage = includeStatus,
 ) => {
   const abort = new AbortController();
   const abortProbe = Effect.sync(() => {
@@ -552,7 +553,7 @@ const probeClaudeCapabilities = (
         const { getSettings } = q as ClaudeSettingsQuery;
         const [usageResult, settingsResult] = yield* Effect.all(
           [
-            includeStatus
+            includeUsage
               ? Effect.tryPromise({
                   try: () =>
                     q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({
@@ -675,6 +676,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   /** Shared with the adapter so turn events reuse the scoped-bucket names this probe saw. */
   scopedLimitNames?: Ref.Ref<ClaudeScopedLimitNames>,
   resolveResetCredits?: (version: string) => Effect.Effect<ServerProviderResetCredits | undefined>,
+  includeUsage = true,
 ): Effect.fn.Return<
   ServerProviderDraft,
   never,
@@ -870,20 +872,23 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
       apiKeySource: capabilities.apiKeySource,
     });
   const usageCheckedAt = capabilities.usageCheckedAt ?? checkedAt;
-  const usageLimits = !capabilities.usage
-    ? makeUnavailableUsageLimits({ checkedAt, reason: "probeFailed" })
-    : scopedLimitNames
-      ? yield* recordClaudeUsageResponse(scopedLimitNames, {
-          response: capabilities.usage,
-          checkedAt: usageCheckedAt,
-        })
-      : claudeUsageResponseToLimits({
-          response: capabilities.usage,
-          checkedAt: usageCheckedAt,
-        }).limits;
+  const usageLimits = !includeUsage
+    ? undefined
+    : !capabilities.usage
+      ? makeUnavailableUsageLimits({ checkedAt, reason: "probeFailed" })
+      : scopedLimitNames
+        ? yield* recordClaudeUsageResponse(scopedLimitNames, {
+            response: capabilities.usage,
+            checkedAt: usageCheckedAt,
+          })
+        : claudeUsageResponseToLimits({
+            response: capabilities.usage,
+            checkedAt: usageCheckedAt,
+          }).limits;
   const resetCredits =
     resolveResetCredits &&
     capabilities.subscriptionType &&
+    usageLimits &&
     !usageLimits.unavailable &&
     parsedVersion
       ? yield* resolveResetCredits(parsedVersion)
@@ -907,7 +912,9 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
         ...(authMetadata ? authMetadata : {}),
       },
       ...(versionUpgradeMessage ? { message: versionUpgradeMessage } : {}),
-      usageLimits: resetCredits ? { ...usageLimits, resetCredits } : usageLimits,
+      ...(usageLimits !== undefined
+        ? { usageLimits: resetCredits ? { ...usageLimits, resetCredits } : usageLimits }
+        : {}),
     },
   });
   // Claude Code lists gateway models only while its one gateway cache holds this base URL, and

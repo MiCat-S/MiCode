@@ -1,13 +1,23 @@
-import type { ServerSettings, ServerSettingsError } from "@t3tools/contracts";
+import {
+  resolveProjectProviderInstanceEnabled,
+  type ProviderInstanceId,
+  type ServerSettings,
+  type ServerSettingsError,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
 import * as Stream from "effect/Stream";
 
 import * as ProviderHost from "./ProviderHost.ts";
 
+export const shouldReadProviderUsage = (settings: ServerSettings, instanceId: ProviderInstanceId) =>
+  settings.providerUsageEnabled &&
+  resolveProjectProviderInstanceEnabled(settings, null, instanceId);
+
 export interface ProviderSnapshotSettings<Settings> {
   readonly provider: Settings;
   readonly enableProviderUpdateChecks: boolean;
+  readonly providerUsageEnabled: boolean;
 }
 
 function makeProviderSnapshotSettings<Settings>(
@@ -17,6 +27,7 @@ function makeProviderSnapshotSettings<Settings>(
   return {
     provider,
     enableProviderUpdateChecks: settings.enableProviderUpdateChecks,
+    providerUsageEnabled: settings.providerUsageEnabled,
   };
 }
 

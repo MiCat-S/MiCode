@@ -5,6 +5,8 @@ Track token usage, cache hit rates, estimated API-equivalent costs, and pooled s
 - **Open Usage**: Click **Usage** in the sidebar, press `mod+u` (web/desktop outside terminals), or pick **Usage** on mobile.
 - **Quick shortcuts** (web/desktop on Usage): `C` (Cost), `T` (Tokens), `L` (Limits), `mod+Shift+1/2/3/4` (24h / 7d / 30d / 90d), `Esc` (back).
 
+Turn on **Read provider usage** in **Settings → Threads → Usage limits** for each environment you want to monitor. It is off by default. When enabled, MI Code reads local activity history and checks quota for enabled providers on that machine.
+
 ## Understand your usage
 
 Usage aggregates history across Codex, Claude Code, Grok Build, OpenCode, Antigravity, Pi, Muse Code, and Cursor from your selected environments. Estimates reflect API-equivalent rates (not your subscription bill); **Premium** shows Fast/Ultrafast surcharge, and **Other** shows unsplit provider-reported costs.

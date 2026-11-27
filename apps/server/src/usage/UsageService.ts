@@ -1,4 +1,7 @@
 import {
+  defaultInstanceIdForDriver,
+  isUnconfiguredDefaultInstanceEnabled,
+  resolveProviderInstanceEnabled,
   type ProviderInstanceConfig,
   ProviderInstanceId,
   USAGE_CONTRACT_VERSION,
@@ -365,13 +368,23 @@ export const make = Effect.gen(function* () {
     driver: ProviderDriver<Config, unknown, unknown>,
     settings: ServerSettingsValue,
   ) {
+    const allowedDrivers = settingsService.managedPolicy?.limits?.providers?.allowedDrivers;
+    if (allowedDrivers !== undefined && !allowedDrivers.includes(driver.driverKind)) return [];
     const entries: Array<
       readonly [ProviderInstanceId, Pick<ProviderInstanceConfig, "config" | "environment">, boolean]
     > = Object.entries(settings.providerInstances)
-      .filter(([, instance]) => instance.driver === driver.driverKind)
+      .filter(
+        ([, instance]) =>
+          instance.driver === driver.driverKind && resolveProviderInstanceEnabled(instance),
+      )
       .map(([id, instance]) => [ProviderInstanceId.make(id), instance, true] as const);
-    // History in the driver's default home stays counted after every instance moves elsewhere; readers dedupe shared directories.
-    entries.push([ProviderInstanceId.make(driver.driverKind), {}, false]);
+    const defaultInstanceId = defaultInstanceIdForDriver(driver.driverKind);
+    if (
+      !Object.hasOwn(settings.providerInstances, defaultInstanceId) &&
+      isUnconfiguredDefaultInstanceEnabled(defaultInstanceId)
+    ) {
+      entries.push([defaultInstanceId, {}, false]);
+    }
     const decodeConfig = Schema.decodeUnknownOption(driver.configSchema);
     return yield* Effect.forEach(
       entries,
@@ -792,7 +805,15 @@ export const make = Effect.gen(function* () {
       ({ driver, reader }) =>
         usageInstances(driver, settings).pipe(
           Effect.flatMap((instances) =>
-            reader.scan({ instances, settings, windowStartMs, retentionCutoffMs, awaitRefresh }),
+            instances.length === 0
+              ? Effect.succeed([])
+              : reader.scan({
+                  instances,
+                  settings,
+                  windowStartMs,
+                  retentionCutoffMs,
+                  awaitRefresh,
+                }),
           ),
           Effect.flatMap((sources) =>
             Effect.forEach(sources, ({ volumeId, ...source }) =>
@@ -1242,6 +1263,12 @@ export const make = Effect.gen(function* () {
     const modelFilter = canonicalModelFilter(requestedFilter);
     const input = modelFilter === undefined ? unfiltered : { ...unfiltered, modelFilter };
     const settings = yield* readSettings;
+    if (!settings.providerUsageEnabled) {
+      return yield* new UsageReadError({
+        reason: "scanFailed",
+        detail: "Turn on Read provider usage in this environment's settings.",
+      });
+    }
     const provisional = input.provisional === true && input.awaitRefresh !== true;
     const key = scanKey(input, settings, provisional);
     const deferred = yield* Effect.uninterruptible(

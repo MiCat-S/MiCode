@@ -12,7 +12,6 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
-import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { buildPromptEnhancementPrompt } from "./PromptEnhancementPrompt.ts";
 import * as TextGeneration from "./TextGeneration.ts";
@@ -32,7 +31,6 @@ export class PromptEnhancement extends Context.Service<
 
 const make = Effect.gen(function* () {
   const settingsService = yield* ServerSettings.ServerSettingsService;
-  const providers = yield* ProviderRegistry.ProviderRegistry;
   const threads = yield* ThreadManagementService.ThreadManagementService;
   const fileSystem = yield* FileSystem.FileSystem;
   const textGeneration = yield* TextGeneration.TextGeneration;
@@ -82,10 +80,7 @@ const make = Effect.gen(function* () {
         const generated = yield* textGeneration.generatePromptEnhancement({
           cwd,
           prompt,
-          modelSelection: resolvePromptEnhancementModelSelection(
-            settings,
-            yield* providers.getProviders,
-          ),
+          modelSelection: resolvePromptEnhancementModelSelection(settings),
         });
         const restored = restore(generated.text);
         if (restored === undefined) {

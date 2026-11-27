@@ -16,7 +16,7 @@ import { useOrderWhileOpen } from "~/hooks/useOrderWhileOpen";
 import { moveDraftToProject } from "~/lib/moveDraftToProject";
 import { useProjectPin } from "~/hooks/useProjectGroupUpdate";
 import { useScratchProject } from "~/hooks/useScratchProject";
-import { isTriagePrompt } from "@t3tools/shared/triagePrompt";
+import { isTriagePrompt, UPSTREAM_TRIAGE_ENABLED } from "@t3tools/shared/triagePrompt";
 import { pickableProjectGroups } from "@t3tools/client-runtime/state/project-grouping";
 import {
   buildSidebarProjectPickerEntries,
@@ -335,7 +335,7 @@ export function DraftHeroHeadline({
       </Tooltip>
     ) : null;
 
-  if (isScratchDraft && isTriageDraftPrompt) {
+  if (UPSTREAM_TRIAGE_ENABLED && isScratchDraft && isTriageDraftPrompt) {
     const environment = environments.find(
       (entry) => entry.environmentId === activeProject.environmentId,
     );

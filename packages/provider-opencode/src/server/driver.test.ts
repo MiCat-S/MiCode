@@ -103,6 +103,14 @@ const create = (config: Partial<OpenCodeSettings>, http: HttpClient.HttpClient, 
     config: { ...OpenCodeDriver.defaultConfig(), ...config },
   }).pipe(Effect.provideService(HttpClient.HttpClient, http));
 
+const usageSettings = (instanceId: string) => ({
+  ...DEFAULT_SERVER_SETTINGS,
+  providerUsageEnabled: true,
+  providerInstances: {
+    [ProviderInstanceId.make(instanceId)]: { driver: OpenCodeDriver.driverKind, enabled: true },
+  },
+});
+
 const noHttp = HttpClient.make(() => Effect.die("A local binary must not be probed over HTTP"));
 
 const openCode2Project = "/work/project-with-config";
@@ -1258,7 +1266,7 @@ it.layer(layer)("OpenCodeDriver runtime selection", (it) => {
         } else {
           assert.deepStrictEqual(snapshot?.usageLimits?.windows, []);
         }
-      }),
+      }).pipe(Effect.provide(TestProviderHost.layer({ settings: usageSettings("opencode-test") }))),
   );
 
   it.effect.each(
@@ -1267,12 +1275,14 @@ it.layer(layer)("OpenCodeDriver runtime selection", (it) => {
       { name: "skips without demand", demand: false },
       { name: "respects a disabled interval", intervalOff: true },
       { name: "skips disabled instances", enabled: false },
+      { name: "skips without opt-in", disabledUsage: true },
       { name: "skips unsupported usage", unsupported: true },
     ].map((scenario) => ({
       enabled: true,
       demand: true,
       intervalOff: false,
       unsupported: false,
+      disabledUsage: false,
       ...scenario,
     })),
   )("Go usage recovery $name without restarting a ready catalog", (scenario) =>
@@ -1366,30 +1376,36 @@ it.layer(layer)("OpenCodeDriver runtime selection", (it) => {
         Effect.provide(
           TestProviderHost.layer({
             runBackgroundWork: scenario.demand,
-            settings: scenario.intervalOff
-              ? {
-                  ...DEFAULT_SERVER_SETTINGS,
-                  backgroundActivity: {
-                    ...DEFAULT_SERVER_SETTINGS.backgroundActivity,
-                    profile: "custom",
-                    overrides: { providerHealthRefreshInterval: Duration.zero },
-                  },
-                }
-              : DEFAULT_SERVER_SETTINGS,
+            settings: {
+              ...usageSettings("opencode-usage-recovery"),
+              providerUsageEnabled: !scenario.disabledUsage,
+              ...(scenario.intervalOff
+                ? {
+                    backgroundActivity: {
+                      ...DEFAULT_SERVER_SETTINGS.backgroundActivity,
+                      profile: "custom",
+                      overrides: { providerHealthRefreshInterval: Duration.zero },
+                    },
+                  }
+                : {}),
+            },
           }),
         ),
         Effect.provideService(HttpClient.HttpClient, server),
         Effect.provideService(OpenCodeRuntime.OpenCodeRuntime, runtime),
       );
+      const readsUsage = scenario.enabled && !scenario.disabledUsage;
       const initial = scenario.enabled
         ? yield* instance.snapshot.streamChanges.pipe(
-            Stream.filter((snapshot) => snapshot.usageLimits !== undefined),
+            Stream.filter((snapshot) =>
+              readsUsage ? snapshot.usageLimits !== undefined : snapshot.status === "ready",
+            ),
             Stream.take(1),
             Stream.runCollect,
             Effect.forkChild,
           )
         : undefined;
-      if (scenario.enabled && !scenario.unsupported) yield* Deferred.await(usageStarted);
+      if (readsUsage && !scenario.unsupported) yield* Deferred.await(usageStarted);
       yield* TestClock.adjust("5 seconds");
       const failed = initial
         ? Array.from(yield* Fiber.join(initial))[0]
@@ -1398,14 +1414,17 @@ it.layer(layer)("OpenCodeDriver runtime selection", (it) => {
         assert.strictEqual(failed?.status, "ready");
         assert.strictEqual(failed?.auth.status, "authenticated");
       }
-      const initialReason =
-        scenario.enabled && !scenario.unsupported ? "probeFailed" : "unsupported";
+      const initialReason = readsUsage
+        ? scenario.unsupported
+          ? "unsupported"
+          : "probeFailed"
+        : undefined;
       assert.strictEqual(failed?.usageLimits?.unavailable?.reason, initialReason);
       const catalogReads = modelReads;
       const starts = serverStarts;
 
       const shouldRecover =
-        scenario.enabled && scenario.demand && !scenario.intervalOff && !scenario.unsupported;
+        readsUsage && scenario.demand && !scenario.intervalOff && !scenario.unsupported;
       const recovery = shouldRecover
         ? yield* instance.snapshot.streamChanges.pipe(
             Stream.filter((snapshot) => snapshot.usageLimits?.windows.length === 3),
@@ -1416,7 +1435,7 @@ it.layer(layer)("OpenCodeDriver runtime selection", (it) => {
         : undefined;
       yield* TestClock.adjust("5 minutes");
       const recovered = yield* instance.snapshot.getSnapshot;
-      const expectedReads = !scenario.enabled ? 0 : shouldRecover ? 2 : 1;
+      const expectedReads = !readsUsage ? 0 : shouldRecover ? 2 : 1;
       assert.strictEqual(usageReads, expectedReads);
       if (recovery) assert.deepStrictEqual(Array.from(yield* Fiber.join(recovery)), [recovered]);
       assert.strictEqual(
@@ -1425,14 +1444,19 @@ it.layer(layer)("OpenCodeDriver runtime selection", (it) => {
       );
       assert.deepStrictEqual(
         recovered.usageLimits?.windows.map((window) => window.kind),
-        shouldRecover ? ["session", "weekly", "monthly"] : [],
+        shouldRecover ? ["session", "weekly", "monthly"] : readsUsage ? [] : undefined,
       );
-      assert.strictEqual(modelReads, catalogReads);
-      assert.strictEqual(serverStarts, starts);
+      // Without a quota probe, the first ready status can precede catalog enrichment.
+      if (!scenario.disabledUsage) {
+        assert.strictEqual(modelReads, catalogReads);
+        assert.strictEqual(serverStarts, starts);
+      }
       yield* TestClock.adjust("15 minutes");
       assert.strictEqual(usageReads, expectedReads);
-      assert.strictEqual(modelReads, catalogReads);
-      assert.strictEqual(serverStarts, starts);
+      if (!scenario.disabledUsage) {
+        assert.strictEqual(modelReads, catalogReads);
+        assert.strictEqual(serverStarts, starts);
+      }
     }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
   );
 
@@ -1493,7 +1517,7 @@ it.layer(layer)("OpenCodeDriver runtime selection", (it) => {
         enabled: true,
         config: OpenCodeDriver.defaultConfig(),
       }).pipe(
-        Effect.provide(TestProviderHost.layer()),
+        Effect.provide(TestProviderHost.layer({ settings: usageSettings("opencode-go-key-only") })),
         Effect.provideService(HttpClient.HttpClient, server),
         Effect.provideService(OpenCodeRuntime.OpenCodeRuntime, runtime),
       );

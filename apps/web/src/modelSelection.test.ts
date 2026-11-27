@@ -17,11 +17,7 @@ import { createModelSelection } from "@t3tools/shared/model";
 import { deriveEffectiveComposerModelState } from "./composerDraftStore";
 import { getComposerProviderState } from "./components/chat/composerProviderState";
 import { resolveComposerProviderSelection } from "./components/ChatView.logic";
-import {
-  deriveProviderInstanceEntries,
-  NO_PROVIDER_MODEL_SELECTION,
-  providerInstanceEntriesFor,
-} from "./providerInstances";
+import { deriveProviderInstanceEntries, providerInstanceEntriesFor } from "./providerInstances";
 import {
   defaultModelSelectionsAreMixed,
   getAppModelOptionsForInstance,
@@ -986,7 +982,7 @@ describe("instance-scoped model selection", () => {
     expect(state.selectedModel).toBe(kimiModel);
   });
 
-  it("self-heals a persisted selection pointing at a text-generation-incapable instance", () => {
+  it("shows the saved selection for a text-generation-incapable instance", () => {
     const providers = [
       provider({
         provider: ProviderDriverKind.make("acpRegistry"),
@@ -1007,8 +1003,8 @@ describe("instance-scoped model selection", () => {
       },
     };
 
-    expect(resolveAppModelSelectionState(settings, providers).instanceId).toBe(
-      ProviderInstanceId.make("codex"),
+    expect(resolveAppModelSelectionState(settings, providers)).toEqual(
+      settings.textGenerationModelSelection,
     );
   });
   it("falls back to the text generation default, not the chat default, for a removed model", () => {
@@ -1029,7 +1025,7 @@ describe("instance-scoped model selection", () => {
     );
   });
 
-  it("does not select a provider that cannot generate system text", () => {
+  it("keeps the saved selection even when another provider is available", () => {
     const instanceId = ProviderInstanceId.make("antigravity");
     const unsupported = {
       ...provider({
@@ -1046,10 +1042,10 @@ describe("instance-scoped model selection", () => {
     };
 
     expect(resolveAppModelSelectionState(settings, [unsupported, supported])).toEqual(
-      createModelSelection(supported.instanceId, "gpt-5.6-sol"),
+      settings.textGenerationModelSelection,
     );
     expect(resolveAppModelSelectionState(settings, [unsupported])).toEqual(
-      NO_PROVIDER_MODEL_SELECTION,
+      settings.textGenerationModelSelection,
     );
   });
 

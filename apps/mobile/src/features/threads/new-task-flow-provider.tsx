@@ -22,7 +22,11 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import { threadContextsOutsideEnvironment } from "@t3tools/shared/composerContextReferences";
-import { isTriagePrompt, replaceTriagePlaybookLink } from "@t3tools/shared/triagePrompt";
+import {
+  isTriagePrompt,
+  replaceTriagePlaybookLink,
+  UPSTREAM_TRIAGE_ENABLED,
+} from "@t3tools/shared/triagePrompt";
 import * as Arr from "effect/Array";
 import { pipe } from "effect/Function";
 
@@ -649,7 +653,9 @@ export function NewTaskFlowProvider(
     // exist only on the machine that prepared them.
     const { draftKey, projectKey } = readFlow();
     const triage =
-      draftKey !== null && isTriagePrompt(getComposerDraftSnapshot(draftKey).text)
+      UPSTREAM_TRIAGE_ENABLED &&
+      draftKey !== null &&
+      isTriagePrompt(getComposerDraftSnapshot(draftKey).text)
         ? await prepareTriage(environmentId)
         : null;
     const result =

@@ -8,7 +8,7 @@ Ask an agent for a visual (e.g. "show this as a chart" or "make a collage of the
 
 - **Local images**: Embedded when published so they stay intact even if the original files move or are deleted.
 - **Preview browser**: Before publishing, agents verify their visual with T3 Code's bundled headless Chromium (~120 MB one-time download, shared with [remote browser tabs](./remote-access.md#browser-host-setup)).
-- **Network restrictions**: Previews can load public CDN assets but block private/local-network IPs. If Clash/Mihomo fake-IP DNS causes CDN loads to fail, inline the resource, add the host to `fake-ip-filter`, or switch proxy DNS to `redir-host`.
+- **Network restrictions** block requests for remote images, scripts, styles, and other resources in visual replies and their previews. Embed resources in the page and use inline scripts and styles.
 
 ## MCP apps
 

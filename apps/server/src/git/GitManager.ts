@@ -36,10 +36,7 @@ import {
   type VcsStatusRemoteResult,
   VcsStatusResult,
   ModelSelection,
-  type OrchestrationV2TurnItem,
   type ProjectId,
-  PROVIDER_DISPLAY_NAMES,
-  ProviderDriverKind,
   SourceControlProviderError,
   type SourceControlWritingStyleSettings,
   type ThreadId,
@@ -73,11 +70,6 @@ import {
   GitPullRequestMaterializationError,
   trimAsciiWhitespace,
 } from "@t3tools/contracts";
-import {
-  historicalMessage,
-  renderHistory,
-  selectHistory,
-} from "@t3tools/provider-core/server/handoffBudget";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import {
   conventionalCommitsTextGenerationPolicy,
@@ -264,9 +256,6 @@ const SETTLED_PR_LOOKUP_RECHECK_INTERVAL = Duration.minutes(15);
 // Shared by every background caller (backfill, settlement, cleanup), so startup discovery
 // cannot fill the git and forge process slots that foreground work also needs.
 const BRANCH_PR_LOOKUP_CONCURRENCY = 4;
-const PR_THREAD_CONTEXT_BYTES = 16_000;
-const NO_THREAD_CONTEXT = { history: undefined, producedBy: undefined };
-const PR_THREAD_COMMAND_OUTPUT_CHARS = 2_000;
 const isSourceControlProviderError = Schema.is(SourceControlProviderError);
 
 /**
@@ -574,14 +563,6 @@ function limitContext(value: string, maxChars: number): string {
   return `${value.slice(0, maxChars)}\n\n[truncated]`;
 }
 
-// Preserve command evidence when selectHistory drops oversized items; test verdicts are at the tail.
-function limitCommandOutput(item: OrchestrationV2TurnItem): OrchestrationV2TurnItem {
-  if (item.type !== "command_execution" || item.output === undefined) return item;
-  if (item.output.length <= PR_THREAD_COMMAND_OUTPUT_CHARS) return item;
-  const tail = item.output.slice(-PR_THREAD_COMMAND_OUTPUT_CHARS).replace(/^[\uDC00-\uDFFF]/u, "");
-  return { ...item, output: `[truncated]\n${tail}` };
-}
-
 function shortenSha(sha: string | undefined): string | null {
   if (!sha) return null;
   return sha.slice(0, SHORT_SHA_LENGTH);
@@ -880,69 +861,6 @@ export const make = Effect.gen(function* () {
       ));
     return { settings: resolveProjectSettings(settings, projectId).settings, projectId };
   });
-  const readThreadContext = Effect.fnUntraced(
-    function* (threadId: ThreadId | undefined) {
-      if (threadId === undefined) return NO_THREAD_CONTEXT;
-      const { thread, runs, visibleTurnItems } = yield* threads.getThreadProjection(threadId);
-      const selected = selectHistory({
-        messages: visibleTurnItems.flatMap(
-          ({ item }) => historicalMessage(limitCommandOutput(item)) ?? [],
-        ),
-        coverage: "Digest of the thread that made this change, oldest first.",
-        budget: PR_THREAD_CONTEXT_BYTES,
-      });
-      // A thread can switch models mid-way, and a fork inherits its ancestors' history; credit
-      // every model behind a turn still visible here. Ancestor runs are best-effort.
-      const visibleRunIds = new Set(visibleTurnItems.flatMap(({ item }) => item.runId ?? []));
-      const ancestorRuns = yield* Effect.forEach(
-        new Set(
-          visibleTurnItems.flatMap(({ item }) => (item.threadId === threadId ? [] : item.threadId)),
-        ),
-        (ancestorId) =>
-          threads.getThreadRecords(ancestorId, ["runs"]).pipe(
-            Effect.map((records) => records.runs),
-            Effect.orElseSucceed(() => []),
-          ),
-      );
-      // Visibility already hides local rollbacks; an ancestor's later rollback leaves the fork's
-      // inherited work in place. A queued run shows its message before it starts.
-      const runSelections = [...runs, ...ancestorRuns.flat()]
-        .filter((run) => visibleRunIds.has(run.id) && run.startedAt !== null)
-        .map((run) => run.modelSelection);
-      const providers = yield* providerRegistry.getProviders;
-      const producedBy = Arr.dedupeWith(
-        (runSelections.length > 0 ? runSelections : [thread.modelSelection]).map(
-          ({ instanceId, model }) => {
-            // The instance's displayName is a user label (often an account), not the harness.
-            // Default instances are named after their driver; a removed custom one names nothing.
-            const harness =
-              PROVIDER_DISPLAY_NAMES[
-                providers.find((provider) => provider.instanceId === instanceId)?.driver ??
-                  ProviderDriverKind.make(instanceId)
-              ];
-            return harness === undefined ? { model } : { model, harness };
-          },
-        ),
-        (left, right) => left.model === right.model && left.harness === right.harness,
-      );
-      return {
-        producedBy,
-        history:
-          selected.messages.length === 0
-            ? undefined
-            : renderHistory(selected.messages, selected.context),
-      };
-    },
-    (effect, threadId) =>
-      effect.pipe(
-        Effect.catch((error) =>
-          Effect.logWarning("GitManager.readThreadContext failed", {
-            threadId,
-            errorTag: error._tag,
-          }).pipe(Effect.as(NO_THREAD_CONTEXT)),
-        ),
-      ),
-  );
   // Hands the base T3 recorded for a branch to the host, whose own tools may keep it elsewhere.
   // Best-effort: nothing T3 does reads it back from there.
   const shareBranchBase = Effect.fn("GitManager.shareBranchBase")(function* (
@@ -2958,7 +2876,6 @@ export const make = Effect.gen(function* () {
     settings: SourceControlTextGenerationSettings,
     cwd: string,
     fallbackBranch: string | null,
-    threadId: ThreadId | undefined,
     emit: GitActionProgressEmitter,
     pushRemoteRef?: { readonly remoteName: string; readonly upstreamRef: string },
   ) =>
@@ -2986,7 +2903,6 @@ export const make = Effect.gen(function* () {
                   yield* provider.readChangeRequestTemplate({ cwd, treeish: baseRangeRef }),
                 )
               : undefined;
-          const { history: threadContext, producedBy } = yield* readThreadContext(threadId);
 
           return yield* textGeneration.generatePrContent({
             cwd,
@@ -2996,8 +2912,6 @@ export const make = Effect.gen(function* () {
             diffSummary: limitContext(rangeContext.diffSummary, 20_000),
             diffPatch: limitContext(rangeContext.diffPatch, 60_000),
             ...(changeRequestTemplate ? { changeRequestTemplate } : {}),
-            ...(threadContext ? { threadContext } : {}),
-            producedBy,
             ...(policy ? { policy } : {}),
             modelSelection: settings.modelSelection,
             projectId: settings.projectId,
@@ -4266,25 +4180,11 @@ export const make = Effect.gen(function* () {
         let preResolvedCommitSuggestion: CommitAndBranchSuggestion | undefined = undefined;
 
         const textGenerationSettings = yield* projectSettingsFor(input).pipe(
-          Effect.flatMap(({ settings, projectId }) =>
-            settings.sourceControlWriterModelSelection === null
-              ? Effect.succeed({
-                  modelSelection: settings.textGenerationModelSelection,
-                  projectId,
-                  style: settings.sourceControlWritingStyle,
-                })
-              : providerRegistry.getProviders.pipe(
-                  Effect.map((providers) => ({
-                    modelSelection: ServerSettings.resolveSourceControlWriterModelSelection(
-                      settings,
-                      providers,
-                      projectId,
-                    ),
-                    projectId,
-                    style: settings.sourceControlWritingStyle,
-                  })),
-                ),
-          ),
+          Effect.map(({ settings, projectId }) => ({
+            modelSelection: ServerSettings.resolveSourceControlWriterModelSelection(settings),
+            projectId,
+            style: settings.sourceControlWritingStyle,
+          })),
           Effect.mapError(
             (cause) =>
               new GitManagerError({
@@ -4376,7 +4276,6 @@ export const make = Effect.gen(function* () {
                     textGenerationSettings,
                     input.cwd,
                     currentBranch,
-                    input.threadId,
                     progress.emit,
                     "pushRemote" in push && push.pushRemote && push.upstreamBranch
                       ? { remoteName: push.pushRemote, upstreamRef: push.upstreamBranch }

@@ -1,3 +1,4 @@
+import { HTML_RENDER_CONTENT_SECURITY_POLICY } from "@t3tools/shared/htmlRender";
 import type { ThemeAppearance } from "@t3tools/shared/themePalettes";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -46,12 +47,16 @@ const MAX_CONSOLE_TEXT_CHARS = 500;
 const VIEWPORT_HEIGHT = 800;
 const MAX_CAPTURE_HEIGHT = 4_000;
 const CAPTURE_TIMEOUT = "20 seconds";
-// Chrome blocks file access; images arrive inlined. Browser-only .localhost permits secure contexts and HTTP resources.
-// publicProxy blocks local networks; pinning the main frame and forbidding popups keeps captures on the page.
+// Inlined resources use the same policy here and when served to clients.
+// Pinning document requests keeps the capture on the supplied page.
 const PAGE_ORIGIN = "http://t3-page.localhost";
 const PAGE_URL = `${PAGE_ORIGIN}/page.html`;
 const PAGE_NAME = "page.html";
 const MEASURE_CONCURRENCY = 3;
+const PAGE_HEADERS = JSON.stringify([
+  { name: "Content-Type", value: "text/html; charset=utf-8" },
+  { name: "Content-Security-Policy", value: HTML_RENDER_CONTENT_SECURITY_POLICY },
+]);
 
 const textEncoder = new TextEncoder();
 
@@ -91,8 +96,6 @@ const decodeRequestPaused = Schema.decodeUnknownOption(
   Schema.Struct({
     requestId: Schema.String,
     request: Schema.Struct({ url: Schema.String }),
-    frameId: Schema.optional(Schema.String),
-    resourceType: Schema.optional(Schema.String),
   }),
 );
 const decodeLogEntryAdded = Schema.decodeUnknownOption(
@@ -168,7 +171,6 @@ const Measured = Schema.Struct({ result: Schema.Struct({ value: Schema.Finite })
 const EXIT_SIGNAL = /signal: '(SIG[A-Z0-9]+)'/;
 
 interface PageEvents {
-  readonly mainFrameId: string;
   body: Uint8Array | undefined;
   loaded: Deferred.Deferred<void, BrowserFailure> | undefined;
   readonly consoleMessages: Array<ConsoleMessage>;
@@ -268,7 +270,7 @@ const launchBrowser = Effect.fnUntraced(function* (input: {
   const fulfillPage = (sessionId: string, requestId: string, body: Uint8Array) =>
     Queue.offerAll(outgoing, [
       textEncoder.encode(
-        `{"id":${++nextId},"sessionId":${JSON.stringify(sessionId)},"method":"Fetch.fulfillRequest","params":{"requestId":${JSON.stringify(requestId)},"responseCode":200,"responseHeaders":[{"name":"Content-Type","value":"text/html; charset=utf-8"}],"body":"`,
+        `{"id":${++nextId},"sessionId":${JSON.stringify(sessionId)},"method":"Fetch.fulfillRequest","params":{"requestId":${JSON.stringify(requestId)},"responseCode":200,"responseHeaders":${PAGE_HEADERS},"body":"`,
       ),
       body,
       textEncoder.encode('"}}\0'),
@@ -305,18 +307,11 @@ const launchBrowser = Effect.fnUntraced(function* (input: {
       if (url === PAGE_URL && body !== undefined) {
         return yield* fulfillPage(sessionId, paused.requestId, body);
       }
-      // Subframes may show other sites covered by Local Network Access; the main frame stays on T3's page.
-      const otherSiteFrame =
-        paused.resourceType === "Document" &&
-        paused.frameId !== page.mainFrameId &&
-        !url.startsWith(`${PAGE_ORIGIN}/`);
-      return yield* otherSiteFrame
-        ? post("Fetch.continueRequest", { requestId: paused.requestId }, sessionId)
-        : post(
-            "Fetch.failRequest",
-            { requestId: paused.requestId, errorReason: "AccessDenied" },
-            sessionId,
-          );
+      return yield* post(
+        "Fetch.failRequest",
+        { requestId: paused.requestId, errorReason: "AccessDenied" },
+        sessionId,
+      );
     }
     const consoleMessage = consoleMessageFromEvent(message.method, message.params);
     if (!consoleMessage) return yield* Effect.void;
@@ -437,8 +432,6 @@ const launchBrowser = Effect.fnUntraced(function* (input: {
       Schema.Struct({ sessionId: Schema.String }),
     );
     const events: PageEvents = {
-      // A page target's id is its main frame's id.
-      mainFrameId: targetId,
       body: undefined,
       loaded: undefined,
       consoleMessages: [],

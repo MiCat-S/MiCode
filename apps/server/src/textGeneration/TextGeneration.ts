@@ -1,22 +1,20 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import type { ModelSelection, ProjectId, ProviderInstanceId } from "@t3tools/contracts";
+import type { ModelSelection, ProjectId } from "@t3tools/contracts";
 import {
   isProviderAvailable,
   isProviderTextGenerationCapable,
-  resolveProjectProviderInstanceEnabled,
+  resolveTextGenerationSelectionEnabled,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import { exhaustedUsageWindow } from "@t3tools/shared/usageLimits";
-import { fallbackTextGenerationModelSelection } from "@t3tools/shared/serverSettings";
 import * as ServerSettings from "../serverSettings.ts";
 import type { ProviderTextGeneration } from "@t3tools/provider-core/server/textGeneration";
 import { TextGenerationError } from "@t3tools/contracts";
 
 import * as ProviderInstallationGate from "../provider/ProviderInstallationGate.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
-import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 import * as ThreadTitleLinks from "./ThreadTitleLinks.ts";
 import * as TextGenerators from "./TextGenerators.ts";
@@ -43,27 +41,6 @@ export class TextGeneration extends Context.Service<TextGeneration, ProviderText
 
 type TextGenerationOp = TextGenerationOperations.Operation;
 
-const resolveInstance = (
-  registry: ProviderInstanceRegistry.ProviderInstanceRegistry["Service"],
-  operation: TextGenerationOp,
-  instanceId: ProviderInstanceId,
-): Effect.Effect<ProviderInstance["textGeneration"], TextGenerationError> =>
-  registry.getInstance(instanceId).pipe(
-    Effect.flatMap((instance) =>
-      instance
-        ? Effect.succeed(instance.textGeneration)
-        : Effect.fail(
-            new TextGenerationError({
-              operation,
-              detail: `No provider instance registered for id '${instanceId}'.`,
-            }),
-          ),
-    ),
-  );
-
-// Review guides investigate the checkout read-only; the other drivers reject that request.
-const INVESTIGATING_DRIVERS = new Set(["codex", "claudeAgent"]);
-
 /** @public */
 export const make = Effect.gen(function* () {
   const registry = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
@@ -80,91 +57,70 @@ export const make = Effect.gen(function* () {
       modelSelection: ModelSelection,
     ) => Effect.Effect<A, TextGenerationError>,
   ) {
+    const fail = (detail: string) => new TextGenerationError({ operation, detail });
     const textGenerator = yield* textGenerators.runner(selection.instanceId);
-    // A review guide reaches a text generator only through a fallback; it needs an agent instead.
-    const textGeneratorId = selection.instanceId;
-    const textGeneratorCannotRun =
-      textGenerator !== undefined && operation === "generateReviewGuide";
-    if (textGenerator !== undefined && !textGeneratorCannotRun) {
+    if (textGenerator !== undefined) {
+      if (operation === "generateReviewGuide") {
+        return yield* fail(
+          "Review guides need a coding agent that can read the checkout. Pick Codex or Claude as the review guide model in Settings → Source control & issues.",
+        );
+      }
       return yield* invoke(
         TextGenerationOperations.fromRunner("TextGenerator", textGenerator),
         selection,
       );
     }
-    const snapshots = yield* registry.listInstances.pipe(
-      Effect.flatMap((instances) =>
-        Effect.forEach(instances, (instance) => instance.snapshot.getSnapshot),
+    const settings = yield* serverSettings.getSettings.pipe(
+      Effect.mapError(
+        (cause) =>
+          new TextGenerationError({ operation, detail: "Could not read model settings.", cause }),
       ),
     );
-    const now = DateTime.toEpochMillis(yield* DateTime.now);
-    const selected = snapshots.find((provider) => provider.instanceId === selection.instanceId);
-    const selectedDisabled = selected?.enabled === false;
-    // Only a failed probe counts: a pending one is also not installed yet.
-    const unusable =
-      textGeneratorCannotRun ||
-      selectedDisabled ||
-      (selected?.enabled === true &&
-        (!isProviderTextGenerationCapable(selected) ||
-          selected.models.find((model) => model.slug === selection.model)
-            ?.supportsTextGeneration === false ||
-          (selected.status === "error" &&
-            (!selected.installed || selected.auth.status === "unauthenticated"))));
-    if (unusable || exhaustedUsageWindow(selected, now, selection.model)) {
-      const settings = yield* serverSettings.getSettings.pipe(
-        Effect.mapError(
-          (cause) =>
-            new TextGenerationError({
-              operation,
-              detail: "Could not read fallback model settings.",
-              cause,
-            }),
-        ),
+    if (!resolveTextGenerationSelectionEnabled(settings, projectId ?? null, selection.instanceId)) {
+      return yield* fail(
+        `Text generation provider '${selection.instanceId}' is disabled or missing. Choose an enabled provider in Settings.`,
       );
-      const rejected = selection;
-      const fallbackWhere = (sameInstance: boolean) =>
-        fallbackTextGenerationModelSelection(
-          settings.providerInstances,
-          (instanceId, driver, model) => {
-            const provider = snapshots.find((candidate) => candidate.instanceId === instanceId);
-            return (
-              (sameInstance ? model !== rejected.model : instanceId !== rejected.instanceId) &&
-              provider?.enabled === true &&
-              resolveProjectProviderInstanceEnabled(settings, projectId ?? null, instanceId) &&
-              provider.installed &&
-              provider.auth.status !== "unauthenticated" &&
-              provider.status !== "error" &&
-              isProviderAvailable(provider) &&
-              isProviderTextGenerationCapable(provider) &&
-              provider.models.find((candidate) => candidate.slug === model)
-                ?.supportsTextGeneration !== false &&
-              (operation !== "generateReviewGuide" || INVESTIGATING_DRIVERS.has(driver)) &&
-              !exhaustedUsageWindow(provider, now, model)
-            );
-          },
-          { defaultModelSelection: settings.defaultModelSelection },
-        );
-      // Another instance first; the rejected instance's other models only when none qualifies.
-      selection = fallbackWhere(false) ?? fallbackWhere(true) ?? selection;
-    }
-    if (textGeneratorCannotRun && selection.instanceId === textGeneratorId) {
-      return yield* new TextGenerationError({
-        operation,
-        detail:
-          "Review guides need a coding agent that can read the checkout. None is ready. Pick Codex or Claude as the review guide model in Settings → Source control & issues.",
-      });
-    }
-    if (selectedDisabled && selection.instanceId === selected.instanceId) {
-      return yield* new TextGenerationError({
-        operation,
-        detail:
-          "No text generation provider is available. Enable a provider that can generate text in Settings → Providers.",
-      });
     }
     return yield* installationGate.execute(
       selection.instanceId,
-      resolveInstance(registry, operation, selection.instanceId).pipe(
-        Effect.flatMap((service) => invoke(service, selection)),
-      ),
+      Effect.gen(function* () {
+        const instance = yield* registry.getInstance(selection.instanceId);
+        if (instance === undefined) {
+          return yield* fail(
+            `Text generation provider '${selection.instanceId}' is unavailable. Check Settings → Providers.`,
+          );
+        }
+        const selected = yield* instance.snapshot.getSnapshot;
+        if (
+          !selected.enabled ||
+          !isProviderAvailable(selected) ||
+          (selected.status === "error" &&
+            (!selected.installed || selected.auth.status === "unauthenticated"))
+        ) {
+          return yield* fail(
+            `Text generation provider '${selection.instanceId}' is not ready. Check Settings → Providers.`,
+          );
+        }
+        if (
+          !isProviderTextGenerationCapable(selected) ||
+          selected.models.find((model) => model.slug === selection.model)
+            ?.supportsTextGeneration === false
+        ) {
+          return yield* fail(
+            `Model '${selection.model}' does not support text generation. Choose another model in Settings.`,
+          );
+        }
+        if (
+          exhaustedUsageWindow(
+            selected,
+            DateTime.toEpochMillis(yield* DateTime.now),
+            selection.model,
+          )
+        ) {
+          return yield* fail(`Model '${selection.model}' has reached its usage limit.`);
+        }
+        return yield* invoke(instance.textGeneration, selection);
+      }),
     );
   });
   return TextGeneration.of({

@@ -664,6 +664,23 @@ it.layer(
       }),
     );
 
+    it.effect("checks Codex sign-in without requesting quota when usage reads are off", () =>
+      Effect.gen(function* () {
+        const status = yield* checkCodexProviderStatus(
+          defaultCodexSettings,
+          (input) => {
+            assert.isTrue(input.skipNativeUsage);
+            return Effect.succeed(makeCodexProbeSnapshot());
+          },
+          undefined,
+          undefined,
+          false,
+        );
+        assert.strictEqual(status.auth.status, "authenticated");
+        assert.isUndefined(status.usageLimits);
+      }),
+    );
+
     it.effect("labels the plan the usage read reports over the cached login plan", () =>
       Effect.gen(function* () {
         const statusWithUsagePlan = (planType: string | null) =>

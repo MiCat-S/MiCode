@@ -140,9 +140,10 @@ export function HtmlRenderWebView(props: {
         nestedScrollEnabled={props.nested && overflow.y}
         overScrollMode={props.nested ? "never" : "always"}
         onShouldStartLoadWithRequest={(request) =>
-          request.isTopFrame === false ||
           withoutFragment(request.url) === withoutFragment(props.uri)
         }
+        originWhitelist={["*"]}
+        javaScriptCanOpenWindowsAutomatically={false}
         onOpenWindow={(event) => {
           const url = event.nativeEvent.targetUrl;
           if (/^https?:/i.test(url)) void openLink(url);

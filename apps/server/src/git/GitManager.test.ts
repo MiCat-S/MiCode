@@ -34,7 +34,6 @@ import type {
 } from "@t3tools/contracts";
 
 import {
-  DEFAULT_SERVER_SETTINGS,
   EventId,
   GitCommandError,
   MessageId,
@@ -3869,7 +3868,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     }),
   );
 
-  it.effect("falls back when the dedicated source control writer is unavailable", () =>
+  it.effect("keeps the selected source control writer even when it is unavailable", () =>
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("t3code-git-manager-");
       yield* initRepo(repoDir);
@@ -3895,7 +3894,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         textGeneration: {
           generateCommitMessage: (input) => {
             generatedModelSelection = input.modelSelection;
-            return Effect.succeed({ subject: "Use the available writer", body: "" });
+            return Effect.succeed({ subject: "Update readme", body: "" });
           },
         },
       });
@@ -3905,7 +3904,10 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         action: "commit",
       });
 
-      expect(generatedModelSelection).toEqual(DEFAULT_SERVER_SETTINGS.textGenerationModelSelection);
+      expect(generatedModelSelection).toEqual({
+        instanceId: missingInstanceId,
+        model: "missing-model",
+      });
     }),
   );
 
@@ -3915,7 +3917,10 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       yield* initRepo(repoDir);
       NodeFS.writeFileSync(NodePath.join(repoDir, "README.md"), "hello\nproject\n");
       const projectId = ProjectId.make("project:git-action-settings");
-      const disabledInstanceId = DEFAULT_SERVER_SETTINGS.textGenerationModelSelection.instanceId;
+      const projectSelection = {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-project-writer",
+      };
       let generatedModelSelection:
         | TextGeneration.CommitMessageGenerationInput["modelSelection"]
         | undefined;
@@ -3924,7 +3929,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         serverSettings: {
           projectSettingsOverrides: {
             [projectId]: {
-              providerInstances: { [disabledInstanceId]: { enabled: false } },
+              textGenerationModelSelection: projectSelection,
             },
           },
         },
@@ -3943,7 +3948,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         projectId,
       });
 
-      expect(generatedModelSelection?.instanceId).toBe(ProviderInstanceId.make("claudeAgent"));
+      expect(generatedModelSelection).toEqual(projectSelection);
     }),
   );
 
@@ -4828,7 +4833,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     }),
   );
 
-  it.effect("create_pr sends bounded checks to the model and omits rolled-back runs", () =>
+  it.effect("create_pr sends the diff without conversation or command output", () =>
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("t3code-git-manager-");
       yield* initRepo(repoDir);
@@ -4874,7 +4879,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         completedAt: createdAt,
         updatedAt: createdAt,
       });
-      let generatedThreadContext: string | undefined;
       let generatedPrompt = "";
       const writer = fromRunner("test", (request) => {
         generatedPrompt = request.prompt;
@@ -4883,10 +4887,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
       const { manager } = yield* makeManager({
         textGeneration: {
-          generatePrContent: (input) => {
-            generatedThreadContext = input.threadContext;
-            return writer.generatePrContent(input);
-          },
+          generatePrContent: writer.generatePrContent,
         },
         seed: Effect.gen(function* () {
           const store = yield* ProjectionStore.ProjectionStoreV2;
@@ -5003,284 +5004,13 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         threadId,
       });
 
-      expect(generatedPrompt).toContain("Command: vp test run\nExit code: 0");
-      expect(generatedPrompt).toContain("Tests 12 passed");
-      expect(generatedPrompt).toContain("Make the PR writer see the thread");
-      expect(generatedPrompt).toContain("Command: vp lint\nExit code: 1");
-      expect(generatedPrompt).toContain("2 lint errors");
-      expect(generatedPrompt).toContain(`Exit code: 0\n[truncated]\n${"b".repeat(1_999)}`);
-      expect(generatedPrompt).toContain(`Exit code: 0\n[truncated]\n😀${"c".repeat(1_998)}`);
-      expect(generatedPrompt.isWellFormed()).toBe(true);
-      expect(generatedPrompt).not.toContain("vp run abandoned");
-      expect(generatedPrompt).not.toContain("abandoned output");
-      expect(Buffer.byteLength(generatedThreadContext ?? "")).toBeLessThanOrEqual(16_000);
-    }),
-  );
-
-  const claudeWorkProvider: ServerProvider = {
-    instanceId: ProviderInstanceId.make("claude_work"),
-    driver: ProviderDriverKind.make("claudeAgent"),
-    displayName: "Work account",
-    enabled: true,
-    installed: true,
-    version: "1.0.0",
-    status: "ready",
-    auth: { status: "authenticated" },
-    checkedAt: "2026-09-27T00:00:00.000Z",
-    models: [],
-    slashCommands: [],
-    skills: [],
-  };
-
-  const seedPrThread = Effect.fnUntraced(function* (input: {
-    readonly threadId: ThreadId;
-    readonly worktreePath: string;
-    readonly forkedFrom?: { readonly threadId: ThreadId; readonly runId: RunId };
-    readonly runs: ReadonlyArray<{
-      readonly modelSelection: ModelSelection;
-      readonly text: string;
-      readonly status?: "rolled_back";
-    }>;
-  }) {
-    const store = yield* ProjectionStore.ProjectionStoreV2;
-    const { threadId } = input;
-    const createdAt = DateTime.makeUnsafe("2026-09-27T00:00:00.000Z");
-    const modelSelection = input.runs[0]!.modelSelection;
-    yield* store.apply({
-      id: EventId.make(`event:${threadId}:thread`),
-      type: "thread.created",
-      threadId,
-      providerInstanceId: modelSelection.instanceId,
-      occurredAt: createdAt,
-      payload: {
-        createdBy: "user",
-        creationSource: "web",
-        id: threadId,
-        projectId: ProjectId.make("project:pr-thread-model"),
-        title: "PR thread model",
-        providerInstanceId: modelSelection.instanceId,
-        modelSelection,
-        runtimeMode: "full-access",
-        interactionMode: "default",
-        branch: null,
-        worktreePath: input.worktreePath,
-        activeProviderThreadId: null,
-        lineage: input.forkedFrom
-          ? {
-              parentThreadId: input.forkedFrom.threadId,
-              relationshipToParent: "fork",
-              rootThreadId: input.forkedFrom.threadId,
-            }
-          : { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
-        forkedFrom: input.forkedFrom ? { type: "run", ...input.forkedFrom } : null,
-        createdAt,
-        updatedAt: createdAt,
-        archivedAt: null,
-        settledOverride: null,
-        settledAt: null,
-        lastVisitedAt: null,
-        deletedAt: null,
-      },
-    });
-    for (const [index, spec] of input.runs.entries()) {
-      const ordinal = index + 1;
-      const runId = RunId.make(`run:${threadId}:${ordinal}`);
-      const messageId = MessageId.make(`message:${threadId}:${ordinal}`);
-      yield* store.apply({
-        id: EventId.make(`event:${threadId}:run:${ordinal}`),
-        type: "run.updated",
-        threadId,
-        runId,
-        occurredAt: createdAt,
-        payload: {
-          id: runId,
-          threadId,
-          ordinal,
-          providerInstanceId: spec.modelSelection.instanceId,
-          modelSelection: spec.modelSelection,
-          providerThreadId: null,
-          userMessageId: messageId,
-          rootNodeId: null,
-          activeAttemptId: null,
-          status: spec.status ?? "completed",
-          requestedAt: createdAt,
-          startedAt: createdAt,
-          completedAt: createdAt,
-          checkpointId: null,
-          contextHandoffId: null,
-        },
-      });
-      yield* store.apply({
-        id: EventId.make(`event:${threadId}:item:${ordinal}`),
-        type: "turn-item.updated",
-        threadId,
-        runId,
-        occurredAt: createdAt,
-        payload: {
-          id: TurnItemId.make(`item:${threadId}:${ordinal}`),
-          threadId,
-          runId,
-          nodeId: null,
-          providerThreadId: null,
-          providerTurnId: null,
-          nativeItemRef: null,
-          parentItemId: null,
-          ordinal,
-          status: "completed",
-          title: null,
-          startedAt: createdAt,
-          completedAt: createdAt,
-          updatedAt: createdAt,
-          type: "user_message",
-          messageId,
-          createdBy: "user",
-          creationSource: "web",
-          inputIntent: "turn_start",
-          text: spec.text,
-          attachments: [],
-        },
-      });
-    }
-  });
-
-  const createPrPrompt = Effect.fnUntraced(function* (
-    seed: (
-      worktreePath: string,
-    ) => Effect.Effect<
-      void,
-      ProjectionStore.ProjectionStoreV2Error,
-      ProjectionStore.ProjectionStoreV2
-    >,
-    threadId: ThreadId,
-  ) {
-    const repoDir = yield* makeTempDir("t3code-git-manager-");
-    yield* initRepo(repoDir);
-    yield* runGit(repoDir, ["checkout", "-b", "feature/thread-model"]);
-    NodeFS.writeFileSync(NodePath.join(repoDir, "thread-model.txt"), "model\n");
-    yield* runGit(repoDir, ["add", "thread-model.txt"]);
-    yield* runGit(repoDir, ["commit", "-m", "Thread model"]);
-    const remoteDir = yield* createBareRemote();
-    yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
-    let generatedPrompt = "";
-    const writer = fromRunner("test", (request) => {
-      generatedPrompt = request.prompt;
-      return decodeJsonReply(request, "test", '{"title":"Thread model","body":"Body"}');
-    });
-    const { manager } = yield* makeManager({
-      serverSettings: {
-        textGenerationModelSelection: {
-          instanceId: ProviderInstanceId.make("codex"),
-          model: "gpt-6.1-terra",
-        },
-      },
-      textGeneration: { generatePrContent: writer.generatePrContent },
-      providers: [claudeWorkProvider],
-      seed: seed(repoDir),
-    });
-    yield* manager.runStackedAction({
-      actionId: "test-action-id",
-      cwd: repoDir,
-      action: "create_pr",
-      threadId,
-    });
-    return generatedPrompt;
-  });
-
-  it.effect("create_pr tells the writer which model and harness made the change", () =>
-    Effect.gen(function* () {
-      const threadId = ThreadId.make("thread:pr-thread-model");
-      const instanceId = claudeWorkProvider.instanceId;
-      const prompt = yield* createPrPrompt(
-        (worktreePath) =>
-          seedPrThread({
-            threadId,
-            worktreePath,
-            runs: [
-              {
-                modelSelection: { instanceId, model: "claude-opus-5-5" },
-                text: "Add the thread model file",
-              },
-              {
-                modelSelection: { instanceId, model: "claude-haiku-5-5" },
-                text: "Undo that",
-                status: "rolled_back",
-              },
-              {
-                modelSelection: {
-                  instanceId: ProviderInstanceId.make("claude_removed"),
-                  model: "claude-sonnet-5-5",
-                },
-                text: "Polish the file",
-              },
-            ],
-          }),
-        threadId,
-      );
-
-      expect(prompt).toContain("Add the thread model file");
-      expect(prompt).toContain('- model "claude-opus-5-5", harness Claude\n');
-      expect(prompt).toContain('- model "claude-sonnet-5-5", harness unknown\n');
-      expect(prompt).not.toContain("Work account");
-      expect(prompt).not.toContain("claude_removed");
-      expect(prompt).not.toContain("claude-haiku-5-5");
-    }),
-  );
-
-  it.effect("create_pr credits the models a fork inherited its history from", () =>
-    Effect.gen(function* () {
-      const sourceThreadId = ThreadId.make("thread:pr-fork-source");
-      const forkThreadId = ThreadId.make("thread:pr-fork");
-      const prompt = yield* createPrPrompt(
-        (worktreePath) =>
-          Effect.gen(function* () {
-            yield* seedPrThread({
-              threadId: sourceThreadId,
-              worktreePath,
-              runs: [
-                {
-                  modelSelection: {
-                    instanceId: claudeWorkProvider.instanceId,
-                    model: "claude-opus-5-5",
-                  },
-                  text: "Implement the thread model file",
-                },
-              ],
-            });
-            yield* seedPrThread({
-              threadId: forkThreadId,
-              worktreePath,
-              forkedFrom: {
-                threadId: sourceThreadId,
-                runId: RunId.make(`run:${sourceThreadId}:1`),
-              },
-              runs: [
-                {
-                  modelSelection: {
-                    instanceId: ProviderInstanceId.make("codex"),
-                    model: "gpt-6.2",
-                  },
-                  text: "Review the change",
-                },
-              ],
-            });
-            // Rolling the source back afterwards leaves the work the fork inherited in place.
-            const store = yield* ProjectionStore.ProjectionStoreV2;
-            const [sourceRun] = (yield* store.getThreadRecords(sourceThreadId, ["runs"])).runs;
-            yield* store.apply({
-              id: EventId.make(`event:${sourceThreadId}:rollback`),
-              type: "run.updated",
-              threadId: sourceThreadId,
-              runId: sourceRun!.id,
-              occurredAt: sourceRun!.requestedAt,
-              payload: { ...sourceRun!, status: "rolled_back" },
-            });
-          }),
-        forkThreadId,
-      );
-
-      expect(prompt).toContain("Implement the thread model file");
-      expect(prompt).toContain('- model "claude-opus-5-5", harness Claude\n');
-      expect(prompt).toContain('- model "gpt-6.2", harness Codex\n');
+      expect(generatedPrompt).toContain("Diff patch:");
+      expect(generatedPrompt).toContain("+context");
+      expect(generatedPrompt).not.toContain("Make the PR writer see the thread");
+      expect(generatedPrompt).not.toContain("vp test run");
+      expect(generatedPrompt).not.toContain("Tests 12 passed");
+      expect(generatedPrompt).not.toContain("2 lint errors");
+      expect(generatedPrompt).not.toContain("Change produced by");
     }),
   );
 

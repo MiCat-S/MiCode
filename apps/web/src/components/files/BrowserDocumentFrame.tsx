@@ -14,6 +14,7 @@ import {
   type HtmlRenderShortcut,
   htmlRenderShortcutsMessage,
   HTML_RENDER_CONTAIN_SCROLL_FRAGMENT,
+  HTML_RENDER_FRAME_SANDBOX,
   htmlRenderThemeFragment,
   htmlRenderThemeMessage,
   htmlRenderResult,
@@ -454,7 +455,7 @@ export function HtmlRenderDocument(props: {
         src={src}
         title={props.title}
         // Never allow-same-origin: the opaque origin keeps the page out of the app's session.
-        sandbox="allow-scripts allow-forms"
+        sandbox={HTML_RENDER_FRAME_SANDBOX}
         // Lets a page's video or image viewer take the screen.
         allow="fullscreen"
         loading="lazy"

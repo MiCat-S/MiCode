@@ -1,3 +1,4 @@
+import { UPSTREAM_TRIAGE_ENABLED } from "@t3tools/shared/triagePrompt";
 import { LegendList, type LegendListRef } from "@legendapp/list/react-native";
 import { useAtomValue } from "@effect/atom-react";
 import { uuidv4 } from "../../lib/uuid";
@@ -289,6 +290,7 @@ export function CommandPalette(props: {
   });
   const canTriage =
     useAtomValue(serverEnvironment.prepareTriage.permissionAtom(triageEnvironmentId)) &&
+    UPSTREAM_TRIAGE_ENABLED &&
     triageEnvironmentId !== null &&
     serverConfigs.get(triageEnvironmentId)?.environment.capabilities.triage === true;
   const canShareWithGuest = useCanShareWithGuest(activeThreadRef?.environmentId ?? null);

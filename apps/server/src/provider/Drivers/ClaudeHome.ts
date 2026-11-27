@@ -159,17 +159,6 @@ export const makeClaudeContinuationGroupKey = Effect.fn("makeClaudeContinuationG
   },
 );
 
-export const makeClaudeCapabilitiesCacheKey = Effect.fn("makeClaudeCapabilitiesCacheKey")(
-  function* (
-    config: Pick<ClaudeSettings, "binaryPath" | "homePath">,
-    cwd?: string,
-    environment?: NodeJS.ProcessEnv,
-  ): Effect.fn.Return<string, never, Path.Path> {
-    const resolvedHomePath = yield* resolveClaudeHomePath(config, environment);
-    return `${config.binaryPath}\0${resolvedHomePath}\0${cwd ?? ""}`;
-  },
-);
-
 /** Separate spawn env from login commands to preserve literal paths, including relative inherited values. */
 export const claudeSignedOutMessage = (input: {
   readonly configDir: string | undefined;

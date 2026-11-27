@@ -1,9 +1,7 @@
 import type {
   BackgroundActivityProfile,
   BackgroundActivitySettings,
-  ProviderInstanceConfig,
   PreviewViewportSetting,
-  ProviderInstanceId,
   ServerSettings,
   SidebarProjectGroupingMode,
   UnifiedSettings,
@@ -213,25 +211,6 @@ export function backgroundActivitySharedPolicySettings(
     profile: "custom",
     baseProfile: profile,
     overrides: normalized.profile === "custom" ? normalized.overrides : {},
-  };
-}
-
-export function buildProviderInstanceUpdatePatch(input: {
-  readonly settings: Pick<ServerSettings, "providerInstances">;
-  readonly instanceId: ProviderInstanceId;
-  readonly instance: ProviderInstanceConfig;
-  readonly textGenerationModelSelection?:
-    | ServerSettings["textGenerationModelSelection"]
-    | undefined;
-}): Partial<UnifiedSettings> {
-  return {
-    providerInstances: {
-      ...input.settings.providerInstances,
-      [input.instanceId]: input.instance,
-    },
-    ...(input.textGenerationModelSelection !== undefined
-      ? { textGenerationModelSelection: input.textGenerationModelSelection }
-      : {}),
   };
 }
 

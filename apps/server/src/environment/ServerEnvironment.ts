@@ -1,3 +1,4 @@
+import { UPSTREAM_TRIAGE_ENABLED } from "@t3tools/shared/triagePrompt";
 import {
   EnvironmentId,
   ORCHESTRATION_PROTOCOL_VERSION,
@@ -278,7 +279,7 @@ export const make = Effect.gen(function* () {
       projectOrganization: true,
       ignoredFileListing: true,
       ignoredFileSearch: true,
-      triage: true,
+      triage: UPSTREAM_TRIAGE_ENABLED,
       oneTimeSchedules: true,
       freshContext: true,
       scheduledTaskThreadModes: true,

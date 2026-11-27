@@ -761,125 +761,61 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
       }).pipe(Effect.provide(layerServerSettings())),
   );
 
-  it.effect.each(["codex"])(
-    "falls back to enabled instance %s after disabling the selection",
-    (fallbackId) =>
-      Effect.scoped(
-        Effect.gen(function* () {
-          const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
-          const serverConfig = yield* ServerConfig.ServerConfig;
-          const fileSystem = yield* FileSystem.FileSystem;
-          const writerId = ProviderInstanceId.make("writer");
-          const fallbackInstanceId = ProviderInstanceId.make(fallbackId);
-          const selection = { instanceId: writerId, model: "claude-sonnet-4-6" };
-          const providerInstances = {
-            [ProviderInstanceId.make("claudeAgent")]: {
-              driver: ProviderDriverKind.make("claudeAgent"),
-              enabled: false,
-            },
-            [fallbackInstanceId]: {
-              driver: ProviderDriverKind.make("codex"),
-              enabled: true,
-              config: {},
-            },
-            [writerId]: {
-              driver: ProviderDriverKind.make("claudeAgent"),
-              enabled: true,
-              config: {},
-            },
-          };
-
-          yield* serverSettings.updateSettings({
-            providerInstances,
-            textGenerationModelSelection: selection,
-          });
-          const changes = yield* serverSettings.subscribeChanges;
-
-          const next = yield* serverSettings.updateSettings({
-            providerInstances: {
-              ...providerInstances,
-              [writerId]: { ...providerInstances[writerId]!, enabled: false },
-            },
-          });
-          const fallbackSelection = {
-            instanceId: fallbackInstanceId,
-            model: DEFAULT_SERVER_SETTINGS.textGenerationModelSelection.model,
-          };
-          assert.deepEqual(next.textGenerationModelSelection, fallbackSelection);
-          assert.deepEqual(
-            (yield* serverSettings.getSettings).textGenerationModelSelection,
-            fallbackSelection,
-          );
-          const change = Option.getOrUndefined(yield* Stream.runHead(changes));
-          assert.deepEqual(change?.textGenerationModelSelection, fallbackSelection);
-
-          const persisted = yield* fileSystem
-            .readFileString(serverConfig.settingsPath)
-            .pipe(
-              Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(ServerSettings))),
-            );
-          assert.deepEqual(persisted.textGenerationModelSelection, selection);
-
-          const restored = yield* serverSettings.updateSettings({ providerInstances });
-          assert.deepEqual(restored.textGenerationModelSelection, selection);
-        }),
-      ).pipe(Effect.provide(layerServerSettings())),
-  );
-
-  it.effect("skips explicitly disabled default instances when choosing a fallback", () =>
-    Effect.gen(function* () {
-      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
-      const next = yield* serverSettings.updateSettings({
-        providerInstances: {
-          [ProviderInstanceId.make("codex")]: {
-            driver: ProviderDriverKind.make("codex"),
+  it.effect("preserves the selected text generation instance after disabling it", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+        const serverConfig = yield* ServerConfig.ServerConfig;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const writerId = ProviderInstanceId.make("writer");
+        const otherInstanceId = ProviderInstanceId.make("codex");
+        const selection = { instanceId: writerId, model: "claude-sonnet-4-6" };
+        const providerInstances = {
+          [ProviderInstanceId.make("claudeAgent")]: {
+            driver: ProviderDriverKind.make("claudeAgent"),
             enabled: false,
+          },
+          [otherInstanceId]: {
+            driver: ProviderDriverKind.make("codex"),
+            enabled: true,
             config: {},
           },
-        },
-      });
+          [writerId]: {
+            driver: ProviderDriverKind.make("claudeAgent"),
+            enabled: true,
+            config: {},
+          },
+        };
 
-      assert.equal(next.textGenerationModelSelection.instanceId, "claudeAgent");
-      assert.equal(next.textGenerationModelSelection.model, "claude-haiku-5-5");
-    }).pipe(Effect.provide(layerServerSettings())),
-  );
+        yield* serverSettings.updateSettings({
+          providerInstances,
+          textGenerationModelSelection: selection,
+        });
+        const changes = yield* serverSettings.subscribeChanges;
 
-  // A backend behind a custom model may refuse the built-in default.
-  it.effect("falls back to the thread default when it is a custom model on that instance", () =>
-    Effect.gen(function* () {
-      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
-      const claude = ProviderInstanceId.make("claudeAgent");
-      const providerInstances = {
-        [ProviderInstanceId.make("codex")]: {
-          driver: ProviderDriverKind.make("codex"),
-          enabled: false,
-          config: {},
-        },
-        [claude]: {
-          driver: ProviderDriverKind.make("claudeAgent"),
-          config: { customModels: ["z-ai/glm-5.3-flash"] },
-        },
-      };
+        const next = yield* serverSettings.updateSettings({
+          providerInstances: {
+            ...providerInstances,
+            [writerId]: { ...providerInstances[writerId]!, enabled: false },
+          },
+        });
+        assert.deepEqual(next.textGenerationModelSelection, selection);
+        assert.deepEqual(
+          (yield* serverSettings.getSettings).textGenerationModelSelection,
+          selection,
+        );
+        const change = Option.getOrUndefined(yield* Stream.runHead(changes));
+        assert.deepEqual(change?.textGenerationModelSelection, selection);
 
-      const custom = yield* serverSettings.updateSettings({
-        providerInstances,
-        defaultModelSelection: {
-          instanceId: claude,
-          model: "z-ai/glm-5.3-flash",
-          options: [{ id: "thinking", value: false }],
-        },
-      });
-      assert.deepEqual(custom.textGenerationModelSelection, {
-        instanceId: claude,
-        model: "z-ai/glm-5.3-flash",
-        options: [{ id: "thinking", value: false }],
-      });
+        const persisted = yield* fileSystem
+          .readFileString(serverConfig.settingsPath)
+          .pipe(Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(ServerSettings))));
+        assert.deepEqual(persisted.textGenerationModelSelection, selection);
 
-      const builtIn = yield* serverSettings.updateSettings({
-        defaultModelSelection: { instanceId: claude, model: "claude-fable-5-1" },
-      });
-      assert.equal(builtIn.textGenerationModelSelection.model, "claude-haiku-5-5");
-    }).pipe(Effect.provide(layerServerSettings())),
+        const restored = yield* serverSettings.updateSettings({ providerInstances });
+        assert.deepEqual(restored.textGenerationModelSelection, selection);
+      }),
+    ).pipe(Effect.provide(layerServerSettings())),
   );
 
   it.effect(
@@ -918,8 +854,8 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
 
         assert.deepEqual(next.sourceControlWriterModelSelection, sourceControlWriterModelSelection);
         assert.deepEqual(
-          ServerSettingsModule.resolveSourceControlWriterModelSelection(next, undefined, null),
-          next.textGenerationModelSelection,
+          ServerSettingsModule.resolveSourceControlWriterModelSelection(next),
+          sourceControlWriterModelSelection,
         );
         assert.deepEqual(
           (yield* serverSettings.getSettings).sourceControlWriterModelSelection,
@@ -942,7 +878,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
           },
         });
         assert.deepEqual(
-          ServerSettingsModule.resolveSourceControlWriterModelSelection(restored, undefined, null),
+          ServerSettingsModule.resolveSourceControlWriterModelSelection(restored),
           sourceControlWriterModelSelection,
         );
       }).pipe(Effect.provide(layerServerSettings())),
@@ -2946,8 +2882,8 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
         const settings = yield* service.getSettings;
         // Never deleted: the instance stays for its threads, and the registry shows it unavailable.
         assert.equal(settings.providerInstances[cursorId]?.driver, cursor);
-        // Built-in text generation does not fall back onto a disallowed driver either.
-        assert.equal(settings.textGenerationModelSelection.instanceId, "claudeAgent");
+        // The unavailable choice stays visible; generation fails rather than using another driver.
+        assert.equal(settings.textGenerationModelSelection.instanceId, cursorId);
 
         const rejected = yield* service
           .updateProviderInstance({

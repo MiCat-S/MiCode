@@ -407,6 +407,21 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                     onValueChange={(value) => write({ enableAgentBrowserAccess: value })}
                   />
                 </SettingsSection>
+                {projectSelected ? null : (
+                  <SettingsSection title={gt("Usage limits")}>
+                    <SettingsSwitchRow
+                      icon="chart.bar.xaxis"
+                      label={gt("Read provider usage")}
+                      subtitle={managedSubtitle(
+                        "providerUsageEnabled",
+                        gt("Read usage limits and local activity history for enabled providers."),
+                      )}
+                      value={uniform("providerUsageEnabled")}
+                      disabled={disabledFor("providerUsageEnabled")}
+                      onValueChange={(value) => write({ providerUsageEnabled: value })}
+                    />
+                  </SettingsSection>
+                )}
                 <AutoSettleSettingsRows write={write} pending={pendingWrites > 0} />
               </>
             ) : null}

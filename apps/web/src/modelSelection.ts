@@ -33,7 +33,6 @@ import { ModelEsque } from "./components/chat/providerIconUtils";
 import {
   type ProviderInstanceEntry,
   deriveProviderInstanceEntries,
-  NO_PROVIDER_MODEL_SELECTION,
   resolveDefaultProviderModelSelection,
   resolveProjectDefaultProviderModelSelection,
 } from "./providerInstances";
@@ -416,13 +415,11 @@ export function resolveAppModelSelectionState(
     (provider) => provider.supportsTextGeneration !== false,
   );
   const entries = deriveProviderInstanceEntries(supportedProviders);
-  const selectedEntry = entries.find(
+  const entry = entries.find(
     (entry) => entry.instanceId === selection.instanceId && entry.enabled && entry.isAvailable,
   );
-  const entry =
-    selectedEntry ?? entries.find((candidate) => candidate.enabled && candidate.isAvailable);
   if (entry) {
-    const selectedModel = selectedEntry ? selection.model : null;
+    const selectedModel = selection.model;
     // Use the cheap generation default; the catalog default is the expensive chat flagship.
     const options = getTextGenerationModelOptionsForInstance(settings, entry);
     const model =
@@ -444,12 +441,12 @@ export function resolveAppModelSelectionState(
       provider,
       model,
       models: entry.models,
-      modelOptions: selectedEntry ? selection.options : undefined,
+      modelOptions: selection.options,
       includePlanAgent: selectsPlanAgent(selection.options),
     });
 
     return createModelSelection(entry.instanceId, model, modelOptionsForDispatch);
   }
 
-  return NO_PROVIDER_MODEL_SELECTION;
+  return selection;
 }

@@ -1,3 +1,4 @@
+import { UPSTREAM_TRIAGE_ENABLED } from "@t3tools/shared/triagePrompt";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { msg, T, useGT, useMessages, Var } from "gt-react";
 import { m, type MessageResolver } from "../i18n/messages";
@@ -789,6 +790,7 @@ function OpenCommandPaletteDialog(props: {
   });
   const canTriage =
     useAtomValue(serverEnvironment.prepareTriage.permissionAtom(triageEnvironmentId)) &&
+    UPSTREAM_TRIAGE_ENABLED &&
     supportsTriage(triageEnvironmentId);
   const currentProject = resolveCommandPaletteProject(
     projectByKey,

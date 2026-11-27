@@ -148,42 +148,20 @@ describe("resolveProjectSettings", () => {
     },
   );
 
-  it("moves text generation off an instance the project turned off", () => {
+  it("preserves an explicit text generation model when the project turns its instance off", () => {
     const codex = ProviderInstanceId.make("codex");
-    const settings = {
-      ...DEFAULT_SERVER_SETTINGS,
-      textGenerationModelSelection: createModelSelection(codex, "gpt-5"),
-      projectSettingsOverrides: {
-        [projectId]: { providerInstances: { [codex]: { enabled: false } } },
-      },
-    };
-    expect(
-      resolveProjectSettings(settings, projectId).settings.textGenerationModelSelection.instanceId,
-    ).toBe(ProviderInstanceId.make("claudeAgent"));
-    expect(
-      resolveProjectSettings(settings, otherProjectId).settings.textGenerationModelSelection,
-    ).toEqual(settings.textGenerationModelSelection);
-  });
-
-  it("falls back to a configured instance when every built-in one is off for the project", () => {
-    const codex = ProviderInstanceId.make("codex");
-    const codexWork = ProviderInstanceId.make("codex_work");
-    const settings = {
-      ...DEFAULT_SERVER_SETTINGS,
-      textGenerationModelSelection: createModelSelection(codex, "gpt-5"),
-      providerInstances: { [codexWork]: { driver: ProviderDriverKind.make("codex"), config: {} } },
+    const selection = createModelSelection(codex, "gpt-5");
+    const settings = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
       projectSettingsOverrides: {
         [projectId]: {
-          providerInstances: {
-            [codex]: { enabled: false },
-            [ProviderInstanceId.make("claudeAgent")]: { enabled: false },
-          },
+          textGenerationModelSelection: selection,
+          providerInstances: { [codex]: { enabled: false } },
         },
       },
-    };
-    expect(
-      resolveProjectSettings(settings, projectId).settings.textGenerationModelSelection.instanceId,
-    ).toBe(codexWork);
+    });
+    const resolved = resolveProjectSettings(settings, projectId);
+    expect(resolved.settings.textGenerationModelSelection).toEqual(selection);
+    expect(resolved.sources.textGenerationModelSelection).toBe("project");
   });
 });
 

@@ -10,7 +10,10 @@ import {
   injectMcpAppDocumentBootstrap,
   injectMcpAppThemeBootstrap,
 } from "@t3tools/shared/mcpApp";
-import { FILE_PREVIEW_SCROLL_SCRIPT } from "@t3tools/shared/htmlRender";
+import {
+  FILE_PREVIEW_SCROLL_SCRIPT,
+  HTML_RENDER_CONTENT_SECURITY_POLICY,
+} from "@t3tools/shared/htmlRender";
 import { hostPreviewMimeTypeFromExtension } from "@t3tools/shared/filePreview";
 import {
   DESKTOP_READINESS_CHALLENGE_MAX_LENGTH,
@@ -120,6 +123,7 @@ export function assetResponseHeaders(
     readonly download?: boolean;
     readonly fileName?: string;
     readonly mimeType?: string;
+    readonly renderIntent?: "mcp-app" | "file-preview";
   },
 ): Record<string, string> {
   const base = { "Cache-Control": "private, max-age=3600", "X-Content-Type-Options": "nosniff" };
@@ -139,7 +143,10 @@ export function assetResponseHeaders(
     return {
       ...base,
       "Content-Type": "text/html; charset=utf-8",
-      "Content-Security-Policy": HTML_CONTENT_SECURITY_POLICY,
+      "Content-Security-Policy":
+        options?.renderIntent === undefined
+          ? HTML_RENDER_CONTENT_SECURITY_POLICY
+          : HTML_CONTENT_SECURITY_POLICY,
     };
   }
   return {

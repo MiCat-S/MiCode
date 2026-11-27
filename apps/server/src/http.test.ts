@@ -955,7 +955,7 @@ describe("assetResponseHeaders", () => {
     for (const name of ["page.html", "page.HTM", "page.shtml"]) {
       expect(assetResponseHeaders(`/workspace/${name}`)).toMatchObject({
         "Content-Type": "text/html; charset=utf-8",
-        "Content-Security-Policy": "sandbox allow-scripts allow-forms allow-popups allow-downloads",
+        "Content-Security-Policy": expect.stringContaining("default-src 'none'"),
       });
     }
     expect(assetResponseHeaders("/workspace/page.xhtml")).toMatchObject({
@@ -981,8 +981,19 @@ describe("assetResponseHeaders", () => {
       assetResponseHeaders("/attachments/upload.bin", { mimeType: "text/html" }),
     ).toMatchObject({
       "Content-Type": "text/html; charset=utf-8",
-      "Content-Security-Policy": "sandbox allow-scripts allow-forms allow-popups allow-downloads",
+      "Content-Security-Policy": expect.stringContaining("script-src 'unsafe-inline'"),
     });
+    const headers = assetResponseHeaders("/attachments/render.html");
+    const policy = headers["Content-Security-Policy"]!.split("; ");
+    expect(policy).toEqual(
+      expect.arrayContaining([
+        "default-src 'none'",
+        "img-src data: blob:",
+        "style-src 'unsafe-inline'",
+        "form-action 'none'",
+        "sandbox allow-scripts allow-popups",
+      ]),
+    );
   });
 
   it("downloads uploaded documents without executing their content", () => {

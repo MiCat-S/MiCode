@@ -12983,5 +12983,17 @@
   "3ee98da81538c6de": "Could not play narration.",
   "95435f0b59cb2193": "Audio preview",
   "5807c08e225c6b3d": "Download",
-  "0d50b5bfe7151ece": "Could not download file"
+  "0d50b5bfe7151ece": "Could not download file",
+  "b48b73b990703db8": "Read provider usage",
+  "1ef6411381bd479e": "Read usage limits and local activity history for enabled providers.",
+  "571631d2e2a0c2bf": "Check for projects",
+  "eda29e615edb5827": [
+    "Look for projects in your ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " history."
+  ]
 }

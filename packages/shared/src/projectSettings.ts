@@ -7,7 +7,6 @@ import {
   type ProjectScopedServerSettingKey,
   type ProjectSettingsOverrides,
   resolveProjectProviderInstanceEnabled,
-  resolveTextGenerationSelectionEnabled,
   type ResolvedServerSettings,
   type ServerSettings,
   type T3ProjectFile,
@@ -16,7 +15,6 @@ import {
 } from "@t3tools/contracts";
 import { readCustomModelEntries } from "./model.ts";
 import { normalizeProjectPathForComparison } from "./path.ts";
-import { fallbackTextGenerationModelSelection } from "./serverSettings.ts";
 
 export type ProjectSettingSource = "environment" | "project" | "t3.json";
 
@@ -138,14 +136,13 @@ function resolveProjectOverrides(
     // Forward-compatible decoding can leave a present undefined, which is not an override.
     if (value === undefined) continue;
     if (
-      (key === "textGenerationModelSelection" || key === "defaultModelSelection") &&
-      value !== undefined &&
+      key === "defaultModelSelection" &&
       value !== null &&
-      !(
-        key === "textGenerationModelSelection"
-          ? resolveTextGenerationSelectionEnabled
-          : resolveProjectProviderInstanceEnabled
-      )(settings, projectId, (value as ModelSelection).instanceId)
+      !resolveProjectProviderInstanceEnabled(
+        settings,
+        projectId,
+        (value as ModelSelection).instanceId,
+      )
     ) {
       continue;
     }
@@ -166,15 +163,6 @@ function resolveProjectOverrides(
     }
     effective[key] = value;
     sources[key] = "project";
-  }
-  const textGeneration = effective.textGenerationModelSelection as ModelSelection;
-  if (!resolveTextGenerationSelectionEnabled(settings, projectId, textGeneration.instanceId)) {
-    const fallback = fallbackTextGenerationModelSelection(
-      settings.providerInstances,
-      (instanceId) => resolveProjectProviderInstanceEnabled(settings, projectId, instanceId),
-      { defaultModelSelection: effective.defaultModelSelection as ModelSelection | null },
-    );
-    if (fallback !== null) effective.textGenerationModelSelection = fallback;
   }
   return { settings: effective as ServerSettings, sources, overrides };
 }

@@ -1,5 +1,4 @@
 import {
-  DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER,
   ProjectId,
   ProviderDriverKind,
   type ModelSelection,
@@ -411,7 +410,6 @@ it.layer(layerCodexTextGenerationTest)("CodexTextGeneration", (it) => {
             commitSummary: "Remove default shapes",
             diffSummary: "shapes.ts | 2 --",
             diffPatch: "-addDefaultShapes();",
-            threadContext: "user: in a few minutes PR will be up then $babysit-pr",
             modelSelection: DEFAULT_TEST_MODEL_SELECTION,
           });
           expect(result.title).toBe("Remove default shapes");
@@ -660,15 +658,11 @@ const PREFLIGHT_PRIMARY_STATES = [
   "pending",
   "exhausted",
   "not installed",
-  "not installed, fallback disabled for project",
-  "not installed, fallback model cannot generate text",
   "signed out",
-  "signed out, fallback failed",
   "cannot generate text",
   "model cannot generate text",
   "disabled",
-  "disabled, thread default model cannot generate text",
-  "disabled, fallback disabled for project",
+  "disabled for project",
 ] as const;
 
 it.effect.each(PREFLIGHT_PRIMARY_STATES)("text generation preflight: %s", (primaryState) =>
@@ -710,9 +704,6 @@ it.effect.each(PREFLIGHT_PRIMARY_STATES)("text generation preflight: %s", (prima
         ...(primaryState.startsWith("signed out") && instanceId === primary
           ? { status: "error", auth: { status: "unauthenticated" } }
           : {}),
-        ...(primaryState === "signed out, fallback failed" && instanceId === fallback
-          ? { status: "error", auth: { status: "unknown" } }
-          : {}),
         ...(primaryState === "cannot generate text" && instanceId === primary
           ? { supportsTextGeneration: false }
           : {}),
@@ -729,22 +720,7 @@ it.effect.each(PREFLIGHT_PRIMARY_STATES)("text generation preflight: %s", (prima
               ],
             }
           : {}),
-        ...((primaryState === "not installed, fallback model cannot generate text" ||
-          primaryState === "disabled, thread default model cannot generate text") &&
-        instanceId === fallback
-          ? {
-              models: [
-                {
-                  slug: threadDefault.model,
-                  name: threadDefault.model,
-                  isCustom: true,
-                  supportsTextGeneration: false,
-                  capabilities: null,
-                },
-              ],
-            }
-          : {}),
-        ...(primaryState.startsWith("disabled") && instanceId === primary
+        ...(primaryState === "disabled" && instanceId === primary
           ? { enabled: false, status: "disabled" }
           : {}),
         ...(primaryState === "exhausted" && instanceId === primary
@@ -795,10 +771,10 @@ it.effect.each(PREFLIGHT_PRIMARY_STATES)("text generation preflight: %s", (prima
               },
             },
             defaultModelSelection: threadDefault,
-            ...(primaryState.endsWith("fallback disabled for project")
+            ...(primaryState === "disabled for project"
               ? {
                   projectSettingsOverrides: {
-                    [projectId]: { providerInstances: { [fallback]: { enabled: false } } },
+                    [projectId]: { providerInstances: { [primary]: { enabled: false } } },
                   },
                 }
               : {}),
@@ -816,123 +792,99 @@ it.effect.each(PREFLIGHT_PRIMARY_STATES)("text generation preflight: %s", (prima
         cwd: "/tmp",
         message: "hello",
         linkedContext: "",
-        modelSelection:
-          primaryState === "disabled, thread default model cannot generate text"
-            ? threadDefault
-            : selection,
+        modelSelection: selection,
         projectId,
       })
       .pipe(Effect.exit);
-    if (primaryState === "disabled, fallback disabled for project") {
+    if (primaryState === "ready" || primaryState === "pending") {
+      expect(generated).toEqual(Exit.succeed({ title: "Generated title" }));
+      expect(calls).toEqual([selection]);
+    } else {
       expect(Exit.isFailure(generated)).toBe(true);
       expect(calls).toEqual([]);
-      return;
     }
-    expect(generated).toEqual(Exit.succeed({ title: "Generated title" }));
-    expect(calls).toEqual([
-      primaryState === "ready" ||
-      primaryState === "pending" ||
-      primaryState === "not installed, fallback disabled for project" ||
-      primaryState === "signed out, fallback failed"
-        ? selection
-        : primaryState === "not installed, fallback model cannot generate text" ||
-            primaryState === "disabled, thread default model cannot generate text"
-          ? {
-              instanceId: fallback,
-              model:
-                DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER[ProviderDriverKind.make("claudeAgent")],
-            }
-          : threadDefault,
-    ]);
   }),
 );
 
-it.effect(
-  "a review guide aimed at a text generator falls back to an agent that can read the checkout",
-  () =>
-    Effect.gen(function* () {
-      const claude = ProviderInstanceId.make("claudeAgent");
-      const driver = ProviderDriverKind.make("claudeAgent");
-      const calls: ModelSelection[] = [];
-      const instance = {
-        instanceId: claude,
-        driverKind: driver,
-        continuationIdentity: { driverKind: driver, continuationKey: claude },
-        displayName: undefined,
-        enabled: true,
-        snapshot: {
-          getSnapshot: Effect.succeed<ServerProvider>({
-            instanceId: claude,
-            driver,
-            enabled: true,
-            installed: true,
-            status: "ready",
-            auth: { status: "authenticated" },
-            version: null,
-            checkedAt: "1970-01-01T00:00:00Z",
-            models: [],
-            slashCommands: [],
-            skills: [],
-          }),
-        } as ProviderInstance["snapshot"],
-        orchestrationAdapter: {} as ProviderInstance["orchestrationAdapter"],
-        textGeneration: TextGeneration.TextGeneration.of({
-          generateCommitMessage: () => Effect.die("unused"),
-          generatePrContent: () => Effect.die("unused"),
-          generateBranchName: () => Effect.die("unused"),
-          generateThreadTitle: () => Effect.die("unused"),
-          generatePromptEnhancement: () => Effect.die("unused"),
-          generateTranscriptionPostProcessing: () => Effect.die("unused"),
-          generateReviewGuide: (input) =>
-            Effect.sync(() => {
-              calls.push(input.modelSelection);
-              return {} as TextGeneration.ReviewGuideGenerationResult;
-            }),
+it.effect("a review guide aimed at a text generator fails without calling another provider", () =>
+  Effect.gen(function* () {
+    const claude = ProviderInstanceId.make("claudeAgent");
+    const driver = ProviderDriverKind.make("claudeAgent");
+    const calls: ModelSelection[] = [];
+    const instance = {
+      instanceId: claude,
+      driverKind: driver,
+      continuationIdentity: { driverKind: driver, continuationKey: claude },
+      displayName: undefined,
+      enabled: true,
+      snapshot: {
+        getSnapshot: Effect.succeed<ServerProvider>({
+          instanceId: claude,
+          driver,
+          enabled: true,
+          installed: true,
+          status: "ready",
+          auth: { status: "authenticated" },
+          version: null,
+          checkedAt: "1970-01-01T00:00:00Z",
+          models: [],
+          slashCommands: [],
+          skills: [],
         }),
-      } satisfies ProviderInstance;
-      const serviceWith = (instances: ReadonlyArray<ProviderInstance>) =>
-        TextGeneration.make.pipe(
-          Effect.provide(
-            Layer.mergeAll(
-              Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({
-                listInstances: Effect.succeed(instances),
-                getInstance: (id) =>
-                  Effect.succeed(instances.find((candidate) => candidate.instanceId === id)),
-              }),
-              ServerSettings.layerTest({}),
-              Layer.mock(TextGenerators.TextGenerators)({
-                runner: (id) =>
-                  Effect.succeed(
-                    id === "openrouter"
-                      ? () => Effect.die("a text generator cannot investigate")
-                      : undefined,
-                  ),
-              }),
-              Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
-                resolveLink: () => Effect.die("unused"),
-              }),
-              ProviderInstallationGate.layer,
-            ),
+      } as ProviderInstance["snapshot"],
+      orchestrationAdapter: {} as ProviderInstance["orchestrationAdapter"],
+      textGeneration: TextGeneration.TextGeneration.of({
+        generateCommitMessage: () => Effect.die("unused"),
+        generatePrContent: () => Effect.die("unused"),
+        generateBranchName: () => Effect.die("unused"),
+        generateThreadTitle: () => Effect.die("unused"),
+        generatePromptEnhancement: () => Effect.die("unused"),
+        generateTranscriptionPostProcessing: () => Effect.die("unused"),
+        generateReviewGuide: (input) =>
+          Effect.sync(() => {
+            calls.push(input.modelSelection);
+            return {} as TextGeneration.ReviewGuideGenerationResult;
+          }),
+      }),
+    } satisfies ProviderInstance;
+    const serviceWith = (instances: ReadonlyArray<ProviderInstance>) =>
+      TextGeneration.make.pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({
+              listInstances: Effect.succeed(instances),
+              getInstance: (id) =>
+                Effect.succeed(instances.find((candidate) => candidate.instanceId === id)),
+            }),
+            ServerSettings.layerTest({}),
+            Layer.mock(TextGenerators.TextGenerators)({
+              runner: (id) =>
+                Effect.succeed(
+                  id === "openrouter"
+                    ? () => Effect.die("the text generator cannot investigate")
+                    : undefined,
+                ),
+            }),
+            Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+              resolveLink: () => Effect.die("unused"),
+            }),
+            ProviderInstallationGate.layer,
           ),
-        );
-      const input = {
-        cwd: "/tmp",
-        projectCwd: "/tmp",
-        number: 1,
-        title: "Change",
-        description: "",
-        baseBranch: "main",
-        baseCommit: "abc",
-        settledReview: "",
-        modelSelection: { instanceId: ProviderInstanceId.make("openrouter"), model: "some/model" },
-      };
-      yield* (yield* serviceWith([instance])).generateReviewGuide(input);
-      expect(calls.map((selection) => selection.instanceId)).toEqual([claude]);
-
-      // With no agent ready, it says what is missing instead of looking up a provider by that id.
-      const failure = yield* Effect.flip((yield* serviceWith([])).generateReviewGuide(input));
-      expect(failure.detail).toMatch(
-        /^Review guides need a coding agent that can read the checkout/,
+        ),
       );
-    }),
+    const input = {
+      cwd: "/tmp",
+      projectCwd: "/tmp",
+      number: 1,
+      title: "Change",
+      description: "",
+      baseBranch: "main",
+      baseCommit: "abc",
+      settledReview: "",
+      modelSelection: { instanceId: ProviderInstanceId.make("openrouter"), model: "some/model" },
+    };
+    const failure = yield* Effect.flip((yield* serviceWith([instance])).generateReviewGuide(input));
+    expect(failure.detail).toContain("Pick Codex or Claude as the review guide model");
+    expect(calls).toEqual([]);
+  }),
 );

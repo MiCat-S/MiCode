@@ -5,6 +5,7 @@ import { expect, it, vi } from "vite-plus/test";
 
 const harness = vi.hoisted(() => ({
   openedLinks: [] as string[],
+  allowsAutomaticPopups: undefined as boolean | undefined,
   openWindow: null as ((event: { nativeEvent: { targetUrl: string } }) => void) | null,
 }));
 
@@ -16,8 +17,12 @@ vi.mock("react-native", () => ({
   Pressable: ({ children }: Children) => <div>{children}</div>,
 }));
 vi.mock("react-native-webview", () => ({
-  WebView: (props: { onOpenWindow: typeof harness.openWindow }) => {
+  WebView: (props: {
+    onOpenWindow: typeof harness.openWindow;
+    javaScriptCanOpenWindowsAutomatically?: boolean;
+  }) => {
     harness.openWindow = props.onOpenWindow;
+    harness.allowsAutomaticPopups = props.javaScriptCanOpenWindowsAutomatically;
     return null;
   },
 }));
@@ -56,6 +61,7 @@ it("opens a render's issue link the way the thread's own links open", async () =
   const issueUrl = "https://github.com/pingdotgg/t3code/issues/41939";
   await act(async () => harness.openWindow?.({ nativeEvent: { targetUrl: issueUrl } }));
 
+  expect(harness.allowsAutomaticPopups).toBe(false);
   expect(harness.openedLinks).toEqual([issueUrl]);
   await act(async () => root.unmount());
 });

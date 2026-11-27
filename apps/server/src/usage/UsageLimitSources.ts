@@ -225,9 +225,9 @@ export const make = Effect.gen(function* () {
     const settings = yield* settingsService.getSettings.pipe(
       Effect.orElseSucceed((): ServerSettings | null => null),
     );
-    const entries = Object.entries(settings?.usageLimitSources ?? {}).filter(
-      ([, config]) => config.enabled,
-    );
+    const entries = settings?.providerUsageEnabled
+      ? Object.entries(settings.usageLimitSources).filter(([, config]) => config.enabled)
+      : [];
     const snapshots = yield* Effect.forEach(
       entries,
       ([id, config]) => readSource(id as UsageLimitSourceId, config),
@@ -244,7 +244,7 @@ export const make = Effect.gen(function* () {
       Effect.mapError(() => new UsageLimitSourceError({ detail: "Could not read hub settings." })),
     );
     const config = settings.usageLimitSources[input.sourceId];
-    if (!config?.enabled || config.kind !== "cliproxy") {
+    if (!settings.providerUsageEnabled || !config?.enabled || config.kind !== "cliproxy") {
       return yield* new UsageLimitSourceError({
         detail: "The usage limit source is missing or disabled.",
       });
@@ -266,7 +266,7 @@ export const make = Effect.gen(function* () {
   }, refreshLock.withPermits(1));
 
   yield* settingsService.streamChanges.pipe(
-    Stream.map((settings) => settings.usageLimitSources),
+    Stream.map((settings) => [settings.providerUsageEnabled, settings.usageLimitSources] as const),
     Stream.changes,
     Stream.runForEach(() => refresh),
     Effect.forkScoped,
