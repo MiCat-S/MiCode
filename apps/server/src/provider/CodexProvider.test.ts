@@ -20,7 +20,9 @@ import {
 } from "./CodexProvider.ts";
 
 function makeFakeCodexAppServers() {
+  const probes = { version: 0 };
   const helpers: Array<{
+    readonly args: ReadonlyArray<unknown>;
     readonly codexHome: unknown;
     readonly crash: Effect.Effect<void>;
     readonly initializeRequests: Array<unknown>;
@@ -31,6 +33,7 @@ function makeFakeCodexAppServers() {
     Effect.gen(function* () {
       assert(command._tag === "StandardCommand");
       if (command.args[0] === "--version") {
+        probes.version += 1;
         return ChildProcessSpawner.makeHandle({
           pid: ChildProcessSpawner.ProcessId(900_000_000),
           exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(0)),
@@ -53,6 +56,7 @@ function makeFakeCodexAppServers() {
         Effect.asVoid,
       );
       const helper = {
+        args: command.args,
         codexHome: command.options.env?.CODEX_HOME,
         crash,
         initializeRequests: [] as Array<unknown>,
@@ -118,7 +122,7 @@ function makeFakeCodexAppServers() {
       });
     }),
   );
-  return { helpers, spawner };
+  return { helpers, probes, spawner };
 }
 
 it.effect("reuses one Codex skills helper per launch until it idles out", () =>
@@ -169,6 +173,34 @@ it.effect("reuses one Codex skills helper per launch until it idles out", () =>
     yield* Scope.close(providerScope, Exit.void);
     assert.strictEqual(helpers[3]!.closed, true);
   }).pipe(Effect.provideService(HostProcess.Platform, "linux")),
+);
+
+it.effect("a strict-config launch reuses its version probe for the client identity", () =>
+  Effect.gen(function* () {
+    const { helpers, probes, spawner } = makeFakeCodexAppServers();
+    const probe = yield* makeCodexSkillsProbe().pipe(
+      Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+    );
+    yield* probe({
+      binaryPath: "codex",
+      launchArgs: "--strict-config",
+      cwd: "/alpha",
+      environment: {},
+    });
+    assert.strictEqual(probes.version, 1);
+    assert.deepStrictEqual(helpers[0]!.args, [
+      "app-server",
+      "-c",
+      "thread_unload_delay_secs=0",
+      "--strict-config",
+    ]);
+    assert.deepStrictEqual(helpers[0]!.initializeRequests, [
+      {
+        clientInfo: { name: "codex-tui", version: "0.172.0" },
+        capabilities: { experimentalApi: true },
+      },
+    ]);
+  }).pipe(Effect.scoped, Effect.provideService(HostProcess.Platform, "linux")),
 );
 
 it("maps current Codex model capability fields", () => {

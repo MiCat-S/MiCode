@@ -39,7 +39,11 @@ import {
   formatCodexModelName,
 } from "@t3tools/shared/model";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
-import { codexAppServerArgs, resolveCodexLaunchArgs } from "./codexLaunchArgs.ts";
+import {
+  codexAppServerArgs,
+  codexUsesStrictConfig,
+  resolveCodexLaunchArgs,
+} from "./codexLaunchArgs.ts";
 import {
   buildServerProvider,
   COMPACT_SLASH_COMMAND,
@@ -642,11 +646,11 @@ export const withCodexAppServerClient = Effect.fn("withCodexAppServerClient")(fu
 }) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const environment = codexAppServerEnvironment(yield* codexProcessEnvironment(input));
-  const spawnCommand = yield* resolveSpawnCommand(
-    input.binaryPath,
-    codexAppServerArgs(input.launchArgs),
-    { env: environment, extendEnv: true },
-  );
+  const launch = yield* resolveCodexAppServerArgs({ ...input, environment, extendEnv: true });
+  const spawnCommand = yield* resolveSpawnCommand(input.binaryPath, launch.args, {
+    env: environment,
+    extendEnv: true,
+  });
   const child = yield* spawner
     .spawn(
       ChildProcess.make(spawnCommand.command, spawnCommand.args, {
@@ -670,7 +674,10 @@ export const withCodexAppServerClient = Effect.fn("withCodexAppServerClient")(fu
   const client = yield* Effect.service(CodexClient.CodexAppServerClient).pipe(
     Effect.provide(clientContext),
   );
-  const version = yield* probeCodexCliVersion({ ...input, environment, extendEnv: true });
+  const version =
+    launch.version !== undefined
+      ? launch.version
+      : yield* probeCodexCliVersion({ ...input, environment, extendEnv: true });
   const initialize = yield* client.request("initialize", {
     clientInfo: makeCodexClientInfo(version),
     capabilities: { experimentalApi: true },
@@ -859,6 +866,20 @@ export const probeCodexCliVersion = Effect.fn("probeCodexCliVersion")(
     Effect.logDebug("Codex --version probe failed.", { cause }).pipe(Effect.as(null)),
   ),
 );
+
+export const resolveCodexAppServerArgs = Effect.fn("resolveCodexAppServerArgs")(function* (input: {
+  readonly binaryPath: string;
+  readonly launchArgs?: string | undefined;
+  readonly cwd: string;
+  readonly environment: NodeJS.ProcessEnv;
+  readonly extendEnv?: boolean;
+}) {
+  // `version` is undefined when no probe ran, so callers reuse an attempted probe, even a null one.
+  const version = codexUsesStrictConfig(input.launchArgs)
+    ? yield* probeCodexCliVersion(input)
+    : undefined;
+  return { args: codexAppServerArgs(input.launchArgs, version), version };
+});
 
 export const probeCodexSkillsForCwd = Effect.fn("probeCodexSkillsForCwd")(function* (input: {
   readonly binaryPath: string;
