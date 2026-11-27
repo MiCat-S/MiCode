@@ -84,31 +84,6 @@ const TelemetryEnvConfig = Config.all({
   wslDistroName: Config.String("WSL_DISTRO_NAME").pipe(Config.option),
 });
 
-// Users name or import their own distros, so only well-known families are reported.
-const WSL_DISTRO_FAMILIES = [
-  ["ubuntu", "Ubuntu"],
-  ["debian", "Debian"],
-  ["kali", "Kali"],
-  ["opensuse", "openSUSE"],
-  ["suse", "SUSE"],
-  ["sles", "SUSE"],
-  ["oraclelinux", "OracleLinux"],
-  ["almalinux", "AlmaLinux"],
-  ["rockylinux", "RockyLinux"],
-  ["fedora", "Fedora"],
-  ["archlinux", "Arch"],
-  ["alpine", "Alpine"],
-  ["nixos", "NixOS"],
-  ["pengwin", "Pengwin"],
-  ["docker-desktop", "docker-desktop"],
-] as const;
-
-export const wslDistroFamily = (distroName: string): string | undefined => {
-  const name = distroName.trim().toLowerCase();
-  if (name === "") return undefined;
-  return WSL_DISTRO_FAMILIES.find(([prefix]) => name.startsWith(prefix))?.[1] ?? "other";
-};
-
 export class AnalyticsService extends Context.Service<
   AnalyticsService,
   {
@@ -195,9 +170,6 @@ export const make = Effect.gen(function* () {
   const clientType = serverConfig.mode === "desktop" ? "desktop-app" : "cli-web-client";
   const hostPlatform = yield* HostProcess.Platform;
   const hostArchitecture = yield* HostProcess.Architecture;
-  const wslDistro = Option.getOrUndefined(
-    Option.flatMapNullishOr(telemetryConfig.wslDistroName, wslDistroFamily),
-  );
 
   const enqueueBufferedEvent = (
     uuid: string,
@@ -256,14 +228,14 @@ export const make = Effect.gen(function* () {
               ...(installId === null ? {} : { installId }),
               $process_person_profile: false,
               platform: hostPlatform,
-              wsl: wslDistro,
+              wsl: Option.getOrUndefined(telemetryConfig.wslDistroName),
               arch: hostArchitecture,
               t3CodeVersion: packageJson.version,
               telemetryChannel: ServerConfig.telemetryChannel,
               clientType,
               serverOs: serverOsFromNodePlatform(hostPlatform),
               serverArch: hostArchitecture,
-              serverWslDistro: wslDistro,
+              serverWslDistro: Option.getOrUndefined(telemetryConfig.wslDistroName),
               serverAppVersion: packageJson.version,
               serverMode: serverConfig.mode,
             },
