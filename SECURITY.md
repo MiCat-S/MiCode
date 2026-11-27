@@ -1,8 +1,9 @@
 # Security
 
-Report vulnerabilities privately through the
-[MI Code repository's Security tab](https://github.com/MiCat-S/MiCode/security/advisories/new).
-The [security policy](.github/SECURITY.md) covers disclosure.
+Report vulnerabilities as an issue or a pull request with the fix in the
+[MI Code repository](https://github.com/MiCat-S/MiCode). MI Code has no private
+disclosure process; confirmed fixes are merged directly. See the
+[security policy](.github/SECURITY.md).
 
 The rest of this file is for agents and maintainers auditing T3 Code or triaging
 reports. It defines who is trusted with what, which boundaries a real finding
@@ -89,13 +90,14 @@ revocation and ceilings hold, not what a full-scope session can do once issued.
   it can reach these addresses.
 - `access-control-allow-origin: *` on the environment API. Auth is a bearer
   header, so the wildcard grants nothing a caller without a token lacks.
-- Rendered Markdown loads remote images and media from the host its author
-  names, so that host learns the reader's network address and when the content
-  was shown. A page in a preview tab can likewise start a download, as it can
-  in a browser. It is a finding when the request carries a credential or names
-  the environment it was rendered in, when it is made where the product says
-  none is made, or when the app does for the content what the content could
-  not do from where it runs (see 7 and 8).
+- Rendered Markdown loads remote images and media only after the reader clicks
+  them, unless they come from the app itself or the local network. A clicked
+  host learns the reader's network address and when the content was shown. A
+  page in a preview tab can likewise start a download, as it can in a browser.
+  It is a finding when the request carries a credential or names the
+  environment it was rendered in, when it is made where the product says none
+  is made, or when the app does for the content what the content could not do
+  from where it runs (see 7 and 8).
 - A full-access agent can do whatever the user can. Prompt injection that stays
   within the agent's mode is the provider's concern; one that lets it act above
   that mode is in scope (see 3).
@@ -167,7 +169,6 @@ revocation and ceilings hold, not what a full-scope session can do once issued.
   `~/.t3/userdata` or any live environment; use a dev server on seeded data.
 - Treat report attachments as untrusted. Extract them into an empty directory
   outside the worktree and read PoCs before running anything.
-- Fix confirmed findings rather than filing them. Keep advisory details out of
-  public PRs until the fix ships.
+- Fix confirmed findings rather than filing them, and merge the fix directly.
 - When a boundary here changes, update this file and the internal doc that
   explains it in the same PR.
