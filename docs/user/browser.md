@@ -27,7 +27,7 @@ Configure defaults in **Settings → Browser**:
 Agents can open tabs, navigate, click, type, inspect accessibility snapshots, and take screenshots using T3 Code's `preview_*` tools.
 
 - Toggle **Settings → Browser → Agent browser access** (per environment or project override; takes effect when the next agent session starts).
-- **Floating preview**: By default, agent-opened tabs float over chat (**Settings → Browser → Auto-show floating preview**). Turn this off to open them in the right panel instead.
+- **Floating preview**: By default, agent-opened tabs float over chat, and closing the right panel floats its browser tab (**Settings → Browser → Auto-show floating preview**). Turn this off to open agent tabs in the right panel instead and to close the panel without a float.
 - New agent tabs open in Incognito. Agents need your approval to open a saved profile. The profile you choose for your own tabs still applies.
 - When an agent attaches a file outside the thread's project folder or worktree, the approval card shows the browser page and the file paths. You can also select files yourself in the browser panel.
 - In **Supervised**, actions such as opening a page, clicking, typing, and running page scripts ask for your approval. An agent can still check the status of a tab and inspect pages it can access. Claude and Codex can show these approval requests in chat. If your provider cannot request approval, perform the action directly in the browser panel.
