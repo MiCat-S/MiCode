@@ -6212,26 +6212,8 @@
   ],
   "216ab7514aea1d61": "Starta utan agent",
   "501ce2d99da8bfd1": "Konfigurera en agent för att starta.",
-  "b2719f57be34561c": [
-    "MI Code samlar in anonym användningsdata för att förbättra appen. Se",
-    " ",
-    {
-      "t": "a",
-      "i": 1,
-      "c": "integritetspolicyn"
-    },
-    " för att välja bort det."
-  ],
-  "b33f35083757b42c": [
-    "Se",
-    " ",
-    {
-      "t": "a",
-      "i": 1,
-      "c": "integritetspolicyn"
-    },
-    "."
-  ],
+  "f25b94f6ead32b7f": "MI Code skickar användningsdata bara om du slår på det.",
+  "22b99825e8a1eb24": "Läs mer",
   "f77d000c0710f066": "Aktivera",
   "4ed27bf946e504db": "Konfigurera",
   "7a26eaacff0607f7": [
@@ -10318,8 +10300,8 @@
   "c424bee294b9f778": "Miljön hanteras av {organization}. Vissa inställningar och funktioner följer dess policy.",
   "82d9538af590f58c": "Se dina agenter, importera projekt och konfigurera din telefon.",
   "6a48fd0a37e725a1": "Juridiskt",
-  "1d156056202007b7": "Hur vi hanterar dina data, inklusive de anonyma användningsdata som MI Code samlar in.",
   "e741b1ab9396053a": "Hur vi hanterar dina data. {telemetryOff}",
+  "f7218b877f5921aa": "MI Code skickar användningsdata bara om du slår på det.",
   "66b22e4079928cef": "Meddelanden för beroenden, resurser och valfria verktyg som MI Code använder.",
   "e39a57514be028e9": "Granska",
   "7c0512387c3a42ea": "Stable",

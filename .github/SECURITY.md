@@ -1,8 +1,8 @@
 # Security policy
 
-Report security vulnerabilities affecting T3 Code or T3 Tools-operated infrastructure to
-[security@t3.codes](mailto:security@t3.codes). Please do not disclose them publicly until we have had
-a reasonable opportunity to investigate and remediate them.
+Report security vulnerabilities in MI Code privately through this repository's **Security** tab
+([Report a vulnerability](https://github.com/MiCat-S/MiCode/security/advisories/new)). Please do not
+disclose them publicly until there has been a reasonable opportunity to investigate and fix them.
 
-See the [full security policy](https://t3.codes/security-policy) for reporting details, scope,
-and safe harbor terms for good-faith research.
+MI Code is an unofficial fork of T3 Code. Report vulnerabilities in upstream T3 Code or T3
+Tools-operated infrastructure as described in the [T3 Code security policy](https://t3.codes/security-policy).

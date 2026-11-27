@@ -1,12 +1,12 @@
 # Remote access
 
-Drive T3 Code from your phone, browser (`app.t3.codes`), or another desktop app while your agents run on a host computer or server. The host must stay awake and running while you work.
+Drive T3 Code from your phone, a browser, or another desktop app while your agents run on a host computer or server. The host must stay awake and running while you work.
 
 ## Pair over a LAN or private network
 
 - **Desktop host**: Enable **Settings → Sharing & access → Network access** (restarts desktop) and create a one-time pairing link.
 - **CLI host**: Run `t3 up --lan` (background service) or `t3 serve --lan` (foreground), then run `t3 pair` to generate a QR code / pairing URL (`t3code://pair` opens directly in the desktop app).
-- **Hosted web app (`app.t3.codes`)**: Requires an HTTPS endpoint, such as Tailscale HTTPS. For plain HTTP on a LAN, open the direct pairing URL in a local browser or pair from the desktop/mobile app. For custom CAs on Android, install the CA certificate in Android security settings.
+- **Browser**: Pairing links point at the host itself (`https://<host>/pair#token=…` over HTTPS, such as Tailscale HTTPS), so opening one in any browser loads the web app straight from your machine. For custom CAs on Android, install the CA certificate in Android security settings.
 - **Session lifetime**: Paired devices stay signed in while active; sessions unused for 30 days must re-pair.
 
 ### Reach one machine several ways

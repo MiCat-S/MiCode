@@ -2656,11 +2656,9 @@ export function AboutSettingsPanel() {
       <SettingsSection id="legal" title={gt("Legal")}>
         <SettingsRow
           {...setting("privacy-policy")}
-          description={
-            telemetryOff === undefined
-              ? gt("How we handle your data, including the anonymous usage data MI Code collects.")
-              : gt("How we handle your data. {telemetryOff}", { telemetryOff })
-          }
+          description={gt("How we handle your data. {telemetryOff}", {
+            telemetryOff: telemetryOff ?? gt("MI Code sends usage data only if you turn it on."),
+          })}
           control={
             <Button
               render={<a href={PRIVACY_POLICY_URL} target="_blank" rel="noreferrer noopener" />}

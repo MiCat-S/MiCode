@@ -38,4 +38,4 @@ T3 Code strips invisible characters (such as zero-width and hidden tag character
 
 ## Share a thread
 
-**Copy thread** copies a link (`https://app.t3.codes/threads/<environment>/<thread>`) that opens in T3 Code on desktop, web, or mobile and pastes into any composer as a thread chip. Only someone connected to the machine running that thread can view it.
+**Copy thread** copies a link (`t3code://threads/<environment>/<thread>`) that opens the thread in the installed desktop or mobile app and pastes into any composer as a thread chip. Older `https://app.t3.codes/threads/…` links still paste as thread chips. Only someone connected to the machine running that thread can view it.

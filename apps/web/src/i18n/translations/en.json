@@ -6213,26 +6213,8 @@
   ],
   "216ab7514aea1d61": "Start without an agent",
   "501ce2d99da8bfd1": "Set up one agent to start.",
-  "b2719f57be34561c": [
-    "MI Code collects anonymous usage data to improve the app. To opt out, see the",
-    " ",
-    {
-      "t": "a",
-      "i": 1,
-      "c": "privacy policy"
-    },
-    "."
-  ],
-  "b33f35083757b42c": [
-    "See the",
-    " ",
-    {
-      "t": "a",
-      "i": 1,
-      "c": "privacy policy"
-    },
-    "."
-  ],
+  "f25b94f6ead32b7f": "MI Code sends usage data only if you turn it on.",
+  "22b99825e8a1eb24": "Learn more",
   "f77d000c0710f066": "Turn on",
   "4ed27bf946e504db": "Set up",
   "7a26eaacff0607f7": [
@@ -10319,8 +10301,8 @@
   "c424bee294b9f778": "This environment is managed by {organization}. Some settings and features follow its policy.",
   "82d9538af590f58c": "See your agents, import projects, and set up your phone.",
   "6a48fd0a37e725a1": "Legal",
-  "1d156056202007b7": "How we handle your data, including the anonymous usage data MI Code collects.",
   "e741b1ab9396053a": "How we handle your data. {telemetryOff}",
+  "f7218b877f5921aa": "MI Code sends usage data only if you turn it on.",
   "66b22e4079928cef": "Notices for dependencies, assets, and optional tools used by MI Code.",
   "e39a57514be028e9": "Review",
   "7c0512387c3a42ea": "Stable",

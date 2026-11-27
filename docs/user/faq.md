@@ -19,15 +19,11 @@ Yes.
 
 ## How much does T3 Code cost?
 
-Nothing. You pay your own model/agent providers. T3 Connect is free for up to 3 connected host machines per account (phones and browsers don't count). You can also self-host or use LAN/Tailscale.
+Nothing. You pay your own model/agent providers.
 
 ## Can I fork or redistribute T3 Code?
 
 Yes, for the source code. The [MIT License](../../LICENSE) covers source code only—not T3 Code's trademarks, name, wordmark, logos, or icons. Any public fork or build must use its own branding and clearly state that it is unofficial and not affiliated with T3 Tools, Inc. See [TRADEMARK.md](../../TRADEMARK.md).
-
-## Can I connect more than 3 machines with T3 Connect?
-
-Yes. Link a paid T3 Chat account from your account menu → **T3 Chat → Link T3 Chat**: T3 Chat Pro raises the limit to 10 machines, and Premier raises it to 100. See [More machines with T3 Chat](./remote-access.md#more-machines-with-t3-chat).
 
 ## Why is my Claude 5-hour limit draining so fast?
 
@@ -35,19 +31,15 @@ Since v0.1.7, Claude in T3 Code drains your 5-hour limit at the same rate as Cla
 
 ## How do I use T3 Code remotely?
 
-Your agents run wherever the T3 Code server runs (desktop, server, or VPS). Run `t3 up` on that machine and connect via T3 Connect, LAN, Tailscale, or [app.t3.codes](https://app.t3.codes). See [Remote access](./remote-access.md).
+Your agents run wherever the T3 Code server runs (desktop, server, or VPS). Run `t3 up` on that machine and connect over LAN, Tailscale, or SSH. See [Remote access](./remote-access.md).
 
 ## How do I use T3 Code on my phone?
 
-Install the [iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824) or [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code) app and connect it to your computer with T3 Connect or a pairing link. The phone is a remote control—your host computer runs the agents and must stay on. See [Mobile app](./install.md#mobile-app) and [Remote access](./remote-access.md).
-
-## Why does T3 Connect keep disconnecting?
-
-Open **Settings → Environments**, select the machine, and choose **Details**—the first failed check identifies the cause. See [T3 Connect troubleshooting](./t3-connect-troubleshooting.md). Tailscale also works great as a direct fallback.
+Install the [iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824) or [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code) app and connect it to your computer with a pairing link. The phone is a remote control—your host computer runs the agents and must stay on. See [Mobile app](./install.md#mobile-app) and [Remote access](./remote-access.md).
 
 ## Will I get banned for using my subscription?
 
-No. T3 Code stays within the TOS of Claude Code, Codex, Google Antigravity, Grok Build, Cursor, and official ACP bindings.
+MI Code can't promise that. It drives each provider's own CLI or SDK, but it also reads your plan's usage limits from provider endpoints, and each provider sets its own terms. Check your provider's terms if you're unsure.
 
 ## Can I add a bunch of accounts for one provider?
 
