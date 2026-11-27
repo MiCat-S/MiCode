@@ -124,6 +124,7 @@ const authorizeTabAction = Effect.fn("PreviewToolkit.authorizeTabAction")(functi
   action: string,
   input: { readonly tabId?: PreviewTabId | undefined },
   options?: {
+    readonly acceptsDialog?: boolean;
     readonly approvalRequired?: boolean;
     readonly destination?: string;
     readonly files?: ReadonlyArray<string>;
@@ -145,6 +146,12 @@ const authorizeTabAction = Effect.fn("PreviewToolkit.authorizeTabAction")(functi
     return yield* new OrchestratorMcpFailure({
       code: "invalid_request",
       message: "Open a preview tab before requesting approval for this browser action.",
+    });
+  }
+  if (options?.acceptsDialog && tab.dialog?.authChallengeId !== undefined) {
+    return yield* new OrchestratorMcpFailure({
+      code: "invalid_request",
+      message: "Enter HTTP sign-in credentials in the Browser panel.",
     });
   }
   const destination = options?.destination;
@@ -267,11 +274,12 @@ export const claimPreviewRecording = Effect.fn("PreviewToolkit.claimRecording")(
 
 const handlers = {
   preview_dialog: McpToolAccess.actsAsCaller((input, caller) =>
-    invokeTabAction<PreviewAutomationStatus>(
-      caller,
-      "dialog",
-      "respond to a browser dialog",
-      input,
+    authorizeTabAction(caller, "respond to a browser dialog", input, {
+      acceptsDialog: input.accept,
+    }).pipe(
+      Effect.flatMap((tabId) =>
+        invokeTargeted<PreviewAutomationStatus>("dialog", { ...input, tabId }),
+      ),
     ),
   ),
   preview_status: McpToolAccess.readsAsCaller((input) =>

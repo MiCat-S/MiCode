@@ -253,6 +253,71 @@ it.effect("Supervised browser actions stop before opening a tab unless approval 
   ),
 );
 
+it.effect("Supervised mode directs HTTP sign-in to the browser before asking for approval", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const sessions = yield* McpProviderSessions.McpProviderSessions;
+      yield* sessions.showsApprovalRequests(invocation.thread.providerInstanceId);
+      const authChallengeId = "auth-challenge";
+      const inputs = yield* serveSnapshots(
+        "browser-auth-approval-test",
+        {
+          available: true,
+          visible: true,
+          tabId: alternateTabId,
+          url: "https://example.test/",
+          title: "Example",
+          loading: true,
+          dialog: { type: "auth", message: "Sign in", defaultValue: "", authChallengeId },
+        },
+        ["status", "dialog"],
+      );
+      let approvals = 0;
+      const server = yield* McpServer.McpServer;
+      const respond = (args: Record<string, unknown>) =>
+        server.callTool({ name: "preview_dialog", arguments: args }).pipe(
+          Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
+          Effect.provideService(McpSchema.McpServerClient, {
+            ...client,
+            clientCapabilities: { elicitation: {} },
+            getClient: Effect.succeed({
+              elicit: ({ message }: { readonly message: string }) =>
+                Effect.gen(function* () {
+                  approvals += 1;
+                  yield* sessions.answerApprovalRequests(threadId, message, true);
+                  return { action: "accept" as const, content: {} };
+                }),
+            } as unknown as Effect.Success<typeof client.getClient>),
+          }),
+        );
+
+      const signIn = yield* respond({ accept: true });
+      expect(approvals).toBe(0);
+      expect(signIn.isError).toBe(true);
+      expect(signIn.content).toEqual([
+        { type: "text", text: expect.stringContaining("Enter HTTP sign-in credentials") },
+      ]);
+      expect(inputs).toEqual([{}]);
+
+      const dismiss = yield* respond({ accept: false, authChallengeId });
+      expect(dismiss.isError, JSON.stringify(dismiss)).not.toBe(true);
+      expect(approvals).toBe(1);
+      expect(inputs).toContainEqual({ accept: false, authChallengeId });
+    }),
+  ).pipe(
+    Effect.provide(
+      previewTestLayer(
+        Layer.mock(ThreadManagementService.ThreadManagementService)({
+          getThreadShell: (id) =>
+            Effect.succeed(
+              McpToolAccessTestkit.liveThreadShell(id, { runtimeMode: "approval-required" }),
+            ),
+        }),
+      ).pipe(Layer.provideMerge(McpProviderSessions.layer)),
+    ),
+  ),
+);
+
 it.effect("opening a persistent browser profile uses only the application's approval", () =>
   Effect.scoped(
     Effect.gen(function* () {
