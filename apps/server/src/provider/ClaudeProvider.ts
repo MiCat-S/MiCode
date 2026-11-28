@@ -490,9 +490,10 @@ const probeClaudeCapabilities = (
   claudeSettings: ClaudeSettings,
   environment?: NodeJS.ProcessEnv,
   cwd?: string,
-  includeStatus = true,
-  includeUsage = includeStatus,
+  includeStatus: boolean | "usageOnly" = true,
+  includeUsage = includeStatus !== false,
 ) => {
+  const includeSettings = includeStatus === true;
   const abort = new AbortController();
   const abortProbe = Effect.sync(() => {
     if (!abort.signal.aborted) abort.abort();
@@ -504,8 +505,8 @@ const probeClaudeCapabilities = (
       claudeEnvironment,
     );
     const managedMcpConfig = yield* hasClaudeManagedMcpConfig();
-    // Workspace probes (no usage) discard models; the machine probe refreshes the shared cache.
-    const graceMs = includeStatus
+    // Workspace and usage-only probes discard models; the machine probe refreshes the shared cache.
+    const graceMs = includeSettings
       ? claudeGatewayDiscoveryGraceMs({
           ...claudeEnvironment,
           ...(yield* readClaudeSettingsEnv(claudeSettings, cwd, claudeEnvironment)),
@@ -563,7 +564,7 @@ const probeClaudeCapabilities = (
                     new ClaudeCapabilitiesProbeSdkError({ operation: "usage", cause }),
                 }).pipe(Effect.timeout(DEFAULT_TIMEOUT_MS), Effect.result)
               : Effect.undefined,
-            includeStatus && getSettings
+            includeSettings && getSettings
               ? Effect.tryPromise({
                   try: () => getSettings.call(q),
                   catch: (cause) =>

@@ -7,6 +7,9 @@ const harness = vi.hoisted(() => ({
   openedLinks: [] as string[],
   allowsAutomaticPopups: undefined as boolean | undefined,
   openWindow: null as ((event: { nativeEvent: { targetUrl: string } }) => void) | null,
+  message: null as ((event: { nativeEvent: { data: string } }) => void) | null,
+  injectedJavaScript: "",
+  preview: null as unknown,
 }));
 
 type Children = { children?: ReactNode };
@@ -20,9 +23,19 @@ vi.mock("react-native-webview", () => ({
   WebView: (props: {
     onOpenWindow: typeof harness.openWindow;
     javaScriptCanOpenWindowsAutomatically?: boolean;
+    onMessage: typeof harness.message;
+    injectedJavaScript: string;
   }) => {
     harness.openWindow = props.onOpenWindow;
     harness.allowsAutomaticPopups = props.javaScriptCanOpenWindowsAutomatically;
+    harness.message = props.onMessage;
+    harness.injectedJavaScript = props.injectedJavaScript;
+    return null;
+  },
+}));
+vi.mock("../../components/ui/FilePreviewModal", () => ({
+  FilePreviewModal: (props: { source: unknown }) => {
+    harness.preview = props.source;
     return null;
   },
 }));
@@ -63,5 +76,37 @@ it("opens a render's issue link the way the thread's own links open", async () =
 
   expect(harness.allowsAutomaticPopups).toBe(false);
   expect(harness.openedLinks).toEqual([issueUrl]);
+  await act(async () => root.unmount());
+});
+
+it("opens a tapped render image in the image viewer with the page's other images", async () => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  const root = createRoot(document.createElement("div"));
+  await act(async () =>
+    root.render(
+      <HtmlRenderWebView uri="https://assets.test/render.html" title="Gallery" nested={false} />,
+    ),
+  );
+
+  expect(harness.injectedJavaScript).toContain("t3/notifications/open-image");
+  const images = [
+    { src: "data:image/png;base64,AAAA", name: "settings.png" },
+    // MI Code renders only inline images, so the viewer opens no remote URL.
+    { src: "data:image/png;base64,BBBB", name: "profile.png" },
+  ];
+  await act(async () =>
+    harness.message?.({
+      nativeEvent: {
+        data: JSON.stringify({
+          jsonrpc: "2.0",
+          method: "t3/notifications/open-image",
+          params: { src: images[1]!.src, name: images[1]!.name, images, index: 1 },
+        }),
+      },
+    }),
+  );
+
+  const gallery = images.map((image) => ({ kind: "image", uri: image.src, name: image.name }));
+  expect(harness.preview).toEqual({ ...gallery[1], gallery });
   await act(async () => root.unmount());
 });
